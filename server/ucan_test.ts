@@ -1,5 +1,13 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { cidForToken, decode, delegate, generateKeypair, mint, verify } from "./ucan.ts";
+import {
+  cidForToken,
+  createBindingQuote,
+  decode,
+  delegate,
+  generateKeypair,
+  mint,
+  verify,
+} from "./ucan.ts";
 
 const NOW = 1_800_000_000;
 const space = (did: string) => `tinycloud:key:${did.slice("did:key:".length)}:demo`;
@@ -187,4 +195,97 @@ Deno.test("TinyCloud UCAN rejects every specified malformed or widening case", a
     "issuer does not equal",
   );
   console.log("PASS DID-prefix attack rejected by exact comparison");
+});
+
+Deno.test("app identity binding survives an instance move and rejects bad quotes", async () => {
+  const root = await generateKeypair();
+  const firstNode = await generateKeypair();
+  const movedInstance = await generateKeypair();
+  const consumer = await generateKeypair();
+  const app = "appauth:base:0x3ab6b2ac28625aaaff0943cb4fd0cf13227760e1";
+  const measurement = "sha256:admitted-compose";
+  const parent = await mint({
+    issuer: root,
+    audience: app,
+    expiresInSec: 3600,
+    now: NOW,
+    capabilities: [{ with: resource(root.did), can: "kv/read" }],
+  });
+  const quote = await createBindingQuote({
+    instance: movedInstance,
+    app,
+    measurement,
+    nonce: "move-1",
+    expiresInSec: 600,
+    now: NOW,
+  });
+  const moved = await delegate({
+    issuer: movedInstance,
+    audience: consumer.did,
+    expiresInSec: 1800,
+    now: NOW,
+    proofs: [parent],
+    binding: quote,
+    capabilities: [{ with: resource(root.did, "foo/moved"), can: "kv/read" }],
+  });
+  const proofs = new Map([[cidForToken(parent), parent]]);
+  const opts = {
+    root: root.did,
+    now: NOW,
+    proofs,
+    admitApp: (identity: string, hash: string) => identity === app && hash === measurement,
+    usedBindingNonces: new Set<string>(),
+  };
+  await verify(moved, opts);
+  console.log("PASS same app grant exercised by a moved instance with no re-issue");
+  await assertRejects(() => verify(moved, opts), Error, "replayed");
+  console.log("PASS replayed binding quote rejected");
+
+  const unadmittedQuote = await createBindingQuote({
+    instance: firstNode,
+    app,
+    measurement: "sha256:not-admitted",
+    nonce: "move-2",
+    expiresInSec: 600,
+    now: NOW,
+  });
+  const unadmitted = await delegate({
+    issuer: firstNode,
+    audience: consumer.did,
+    expiresInSec: 1800,
+    now: NOW,
+    proofs: [parent],
+    binding: unadmittedQuote,
+    capabilities: [{ with: resource(root.did, "foo/moved"), can: "kv/read" }],
+  });
+  await assertRejects(
+    () => verify(unadmitted, { ...opts, usedBindingNonces: new Set() }),
+    Error,
+    "not admitted",
+  );
+  console.log("PASS unadmitted measurement rejected");
+
+  const wrongAppQuote = await createBindingQuote({
+    instance: firstNode,
+    app: "appauth:base:0x0000000000000000000000000000000000000001",
+    measurement,
+    nonce: "move-3",
+    expiresInSec: 600,
+    now: NOW,
+  });
+  const wrongApp = await delegate({
+    issuer: firstNode,
+    audience: consumer.did,
+    expiresInSec: 1800,
+    now: NOW,
+    proofs: [parent],
+    binding: wrongAppQuote,
+    capabilities: [{ with: resource(root.did, "foo/moved"), can: "kv/read" }],
+  });
+  await assertRejects(
+    () => verify(wrongApp, { ...opts, usedBindingNonces: new Set() }),
+    Error,
+    "invalid binding",
+  );
+  console.log("PASS quote for a different app rejected");
 });

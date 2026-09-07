@@ -55,7 +55,7 @@ export function homePage(env: Record<string, string> = {}): string {
 enclave (TEE). Your site logins are sealed in the enclave; apps you approve get
 <b>scoped, revocable</b> access to specific data — never your raw cookies.</p>
 <div class=row>
-  <a class=btn href="login">Sign in to this pod</a>
+  <a class=btn id=cta href="login">Sign in to this pod</a>
   <a class="btn ghost" href="${src}">Run your own ↗</a>
 </div>
 <div class=note><b>This is ${owner ? esc(owner) + "'s" : "a"} personal instance.</b> It's like a
@@ -68,7 +68,23 @@ evidence ↗</a>. Prefer your own? It's self-hostable — <a href="${src}">grab 
   <li><b>Sync a site</b> (via the extension): its cookies are stored <b>sealed</b> in the enclave, never in plaintext on a server.</li>
   <li><b>Approve an app</b>: it gets a scoped token to read just what you allowed — revoke it anytime from your dashboard.</li>
 </ul>
-<p class=muted>No raw cookies leave the enclave. The operator cannot read your sealed jar.</p>`, brandWord, appName, baseOf(env));
+<p class=muted>No raw cookies leave the enclave. The operator cannot read your sealed jar.</p>
+<script>
+ // #67: a signed-in visitor shouldn't linger on the landing. The localStorage session is
+ // checked against api/me (not trusted) so a stale one keeps the sign-in CTA; a failed check
+ // rejects loudly instead of guessing signed-in.
+ (function(){
+  var t=localStorage.getItem('oauth3_session');
+  if(!t)return;
+  fetch('api/me',{headers:{Authorization:'Bearer '+t}}).then(function(r){return r.json();}).then(function(me){
+    if(!me.signedIn)return;
+    var cta=document.getElementById('cta');
+    cta.textContent='Go to your dashboard';cta.href='dashboard';
+    var f=document.querySelector('footer a[href="login"]');
+    f.textContent='Dashboard';f.href='dashboard';
+  });
+ })();
+</script>`, brandWord, appName, baseOf(env));
 }
 
 export function privacyPage(env: Record<string, string> = {}): string {

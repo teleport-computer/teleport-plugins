@@ -39,6 +39,18 @@ export function googleAuthUrl(g: GoogleEnv, state: string, redirectUri: string):
   const q = new URLSearchParams({ client_id: g.id, redirect_uri: redirectUri, response_type: "code", scope: "openid email profile", state });
   return `${g.authBase}/o/oauth2/v2/auth?${q}`;
 }
+export function googleCalendarAuthUrl(g: GoogleEnv, state: string, redirectUri: string): string {
+  const q = new URLSearchParams({
+    client_id: g.id,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile https://www.googleapis.com/auth/calendar.events",
+    access_type: "offline",
+    prompt: "consent",
+    state,
+  });
+  return `${g.authBase}/o/oauth2/v2/auth?${q}`;
+}
 // Exchange code → Google's STABLE `sub` (the subject part). userinfo call (no JWKS) per RFC 0002 v1.
 export async function googleExchange(g: GoogleEnv, code: string, redirectUri: string): Promise<{ sub: string; email?: string }> {
   const tr = await fetch(`${g.tokenBase}/token`, {
@@ -54,6 +66,35 @@ export async function googleExchange(g: GoogleEnv, code: string, redirectUri: st
   const u = await ur.json();
   if (!u?.sub) throw new Error("google userinfo: no sub");
   return { sub: u.sub, email: u.email };
+}
+
+export interface GoogleCalendarExchange { sub: string; email?: string; access_token: string; refresh_token: string; expires_in?: number; }
+export async function googleCalendarExchange(g: GoogleEnv, code: string, redirectUri: string): Promise<GoogleCalendarExchange> {
+  const tr = await fetch(`${g.tokenBase}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ code, client_id: g.id, client_secret: g.secret, redirect_uri: redirectUri, grant_type: "authorization_code" }),
+  });
+  if (!tr.ok) throw new Error(`google calendar token ${tr.status}`);
+  const tok = await tr.json();
+  if (!tok?.access_token || !tok?.refresh_token) throw new Error("google calendar token: no refresh_token");
+  const ur = await fetch(`${g.userinfoBase}/v1/userinfo`, { headers: { "Authorization": `Bearer ${tok.access_token}` } });
+  if (!ur.ok) throw new Error(`google calendar userinfo ${ur.status}`);
+  const u = await ur.json();
+  if (!u?.sub) throw new Error("google calendar userinfo: no sub");
+  return { sub: u.sub, email: u.email, access_token: tok.access_token, refresh_token: tok.refresh_token, expires_in: tok.expires_in };
+}
+
+export async function googleCalendarRefresh(g: GoogleEnv, refreshToken: string): Promise<{ access_token: string; expires_in?: number }> {
+  const tr = await fetch(`${g.tokenBase}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: g.id, client_secret: g.secret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+  });
+  if (!tr.ok) throw new Error(`google calendar refresh ${tr.status}`);
+  const tok = await tr.json();
+  if (!tok?.access_token) throw new Error(`google calendar refresh: ${tok?.error || "no access_token"}`);
+  return { access_token: tok.access_token, expires_in: tok.expires_in };
 }
 
 export function githubAuthUrl(p: ProviderEnv, state: string, redirectUri: string): string {
@@ -82,15 +123,15 @@ export async function githubExchange(p: ProviderEnv, code: string, redirectUri: 
 
 // CSRF `state`: single-use, TTL, carries the return url + optional linkSubject (set when
 // a signed-in user is LINKING rather than logging in).
-interface St { ret: string; linkSubject?: string; exp: number; }
+interface St { ret: string; linkSubject?: string; purpose?: string; exp: number; }
 const states = new Map<string, St>();
 const TTL = 10 * 60_000;
 
-export function newState(ret: string, linkSubject?: string): string {
+export function newState(ret: string, linkSubject?: string, purpose?: string): string {
   const now = Date.now();
   for (const [k, v] of states) if (v.exp <= now) states.delete(k);
   const s = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  states.set(s, { ret, linkSubject, exp: now + TTL });
+  states.set(s, { ret, linkSubject, purpose, exp: now + TTL });
   return s;
 }
 export function consumeState(s: string): St | null {

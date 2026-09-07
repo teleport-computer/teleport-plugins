@@ -1,60 +1,85 @@
-// Google Calendar plugin — delegated access to the signed-in account's calendar.
-// We hold the whole google.com session jar (synced by the extension); reads are
-// gated by a scoped token, and a structured write cap ("write:event:<eventId>")
-// lets an app EDIT one specific event on the account's behalf — the point of #69.
-//
-// The Google account session cookies live on .google.com (SID/HSID/SSID/APISID/
-// SAPISID, plus the __Secure-1PSID family for newer accounts); calendar.google.com
-// is served by that same account session, so cookieDomains covers both.
-//
-// DATA PATH — honest stub, not an assumption (issue #69 "investigate, do NOT assume").
-// Unlike Otter (whose /speeches endpoint was verified live and baked in) or the
-// twitter plugin (a BROWSER-PATH plugin whose listItems throws by design), the exact
-// calendar.google.com session endpoints for (a) listing upcoming events and (b)
-// editing one event have NOT yet been captured against the cube@shaperotator.xyz
-// account on this branch. Per the scope-down rule we ship everything AROUND the data
-// path — the plugin shape, loggedIn(), the write cap, the gated+audited endpoint,
-// the consent screen — and these methods throw a clear, actionable error rather than
-// guessing a fragile internal URL. Establishing the path is operator-run: sync the
-// jar, drive the logged-in calendar.google.com via the envoy bridge, capture the
-// network_log (the RFC 0001 reification), then bake the verified endpoints here.
-// Errors propagate — no fallbacks, no masking.
+// Google Calendar delegated access through the documented Calendar v3 API.
+// The vault jar for this plugin contains OAuth data (refresh_token and a short-lived
+// access_token), not Google cookies. Event writes remain gated by the handler's exact
+// write:event:<id> capability from #69.
 
+import { googleCalendarRefresh, googleEnv } from "../oidc.ts";
 import { Jar, Plugin, PluginItem } from "./types.ts";
 
-const NOT_CAPTURED = (op: string) =>
-  `google-calendar ${op} path not yet captured against the live account — sync the jar and ` +
-  `capture the calendar.google.com trajectory (operator-run, issue #69); no assumed endpoint`;
+let env: Record<string, string> = {};
+export function configureGoogleCalendar(next: Record<string, string>): void {
+  env = next;
+}
+
+const apiBase = () =>
+  (env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com/calendar/v3").replace(/\/$/, "");
+
+async function accessToken(jar: Jar): Promise<string> {
+  if (!jar.refresh_token) throw new Error("google calendar is not connected");
+  if (jar.access_token && Number(jar.access_token_expires_at || 0) > Date.now() + 30_000) {
+    return jar.access_token;
+  }
+  const g = googleEnv(env);
+  if (!g) throw new Error("google OAuth is not configured");
+  const refreshed = await googleCalendarRefresh(g, jar.refresh_token);
+  jar.access_token = refreshed.access_token;
+  jar.access_token_expires_at = String(Date.now() + (refreshed.expires_in || 3600) * 1000);
+  return jar.access_token;
+}
+
+async function calendarFetch(jar: Jar, path: string, init: RequestInit = {}): Promise<any> {
+  const token = await accessToken(jar);
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  if (init.body) headers.set("Content-Type", "application/json");
+  const response = await fetch(`${apiBase()}${path}`, { ...init, headers });
+  if (!response.ok) {
+    throw new Error(
+      `google calendar ${init.method || "GET"} ${path} ${response.status}: ${await response
+        .text()}`,
+    );
+  }
+  return await response.json();
+}
 
 export const googleCalendarPlugin: Plugin = {
   id: "google-calendar",
   label: "Google Calendar",
-  cookieDomains: [".google.com", ".calendar.google.com"],
+  cookieDomains: [],
   renderUrl: "https://calendar.google.com/calendar/u/0/r",
 
-  // Presence of the long-lived Google account session cookies. SID + HSID have
-  // shipped with every logged-in google.com session for ~two decades and are the
-  // reliable "is this an authenticated Google jar" signal (independent of any
-  // product-specific cookie). The __Secure-1PSID family is present on newer accounts
-  // but not required to call the session authenticated.
   loggedIn(jar: Jar): boolean {
-    return !!(jar["SID"] && jar["HSID"]);
+    return !!jar.refresh_token;
   },
 
-  async listItems(_jar: Jar): Promise<PluginItem[]> {
-    // Upcoming events (id, title, start) — the session endpoint is captured live, then
-    // mapped here. Throwing (not returning []) keeps the read honestly "not live yet".
-    throw new Error(NOT_CAPTURED("list"));
+  async listItems(jar: Jar): Promise<PluginItem[]> {
+    const q = new URLSearchParams({
+      timeMin: new Date().toISOString(),
+      singleEvents: "true",
+      orderBy: "startTime",
+    });
+    const data = await calendarFetch(jar, `/calendars/primary/events?${q}`);
+    return (data.items || []).map((event: any) => ({
+      id: event.id,
+      title: event.summary || "(untitled)",
+      date: event.start?.dateTime || event.start?.date,
+    }));
   },
 
-  async fetchItem(_jar: Jar, _id: string): Promise<unknown> {
-    throw new Error(NOT_CAPTURED("fetch"));
+  async fetchItem(jar: Jar, id: string): Promise<unknown> {
+    return await calendarFetch(jar, `/calendars/primary/events/${encodeURIComponent(id)}`);
   },
 
-  // Edit-on-behalf: patch one event. Called only after the handler has verified owner OR
-  // a write:event:<id> cap, so by the time this runs the caller is authorized for THIS id.
-  // The session write endpoint is captured live (operator-run); until then it throws.
-  async editItem(_jar: Jar, _id: string, _patch: unknown): Promise<unknown> {
-    throw new Error(NOT_CAPTURED("edit"));
+  async editItem(jar: Jar, id: string, patch: unknown): Promise<unknown> {
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+      throw new Error("calendar changes must be an object");
+    }
+    const changes = { ...(patch as Record<string, unknown>) };
+    if ("title" in changes && !("summary" in changes)) changes.summary = changes.title;
+    delete changes.title;
+    return await calendarFetch(jar, `/calendars/primary/events/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    });
   },
 };

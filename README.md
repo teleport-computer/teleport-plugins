@@ -36,6 +36,14 @@ live HAR before trusting in prod.
                            /api/:plugin/items/:id    ◄──────────────── GET (Bearer token)
 ```
 
+**Live demo — [otterscope](https://pod.dstack.soc1024.com/otterscope/):** click *Connect
+Otter*; the extension hands the app a scoped token and it reads your conversations through the
+instance, never your cookie. The full provider flow — `window.oauth3.connect({node, plugin})` →
+scoped token → `GET {node}/oauth3/api/:plugin/items` — with request/response shapes is documented
+in [`docs/provider-flow.md`](docs/provider-flow.md). Apps normally use the
+[oauth3-sdk](https://github.com/teleport-computer/oauth3-sdk) `connect()` (provider-preferred,
+web fallback — [the app contract](docs/app-contract.md)) instead of the provider object directly.
+
 ## Run
 
 ```bash
@@ -95,6 +103,16 @@ jar, seals it at rest (AES-GCM, `SEAL_KEY`), and a background loop polls each pl
 `<dataDir>/transcripts/<plugin>/` every `POLL_INTERVAL_MIN`.
 
 ```bash
+# THE deploy path — reads the live manifest first, carries every field forward, pins the
+# verified manifest (isolation/container, oci_runtime/runc, listen 8080), health-gates.
+bash deploy.sh https://your-daemon.dstack.phala.network [git-ref]
+# token: $TEE_DAEMON_TOKEN or ~/.tee-daemon-staging.env
+```
+
+Manual equivalent (kept for reference; prefer `deploy.sh` — a hand-built manifest wiped
+the live env and took staging down for two days on 2026-08-10):
+
+```bash
 TOKEN=...; CVM=https://your-daemon.dstack.phala.network
 tar czf otter.tgz -C server .
 curl -X POST $CVM/_api/projects -H "Authorization: Bearer $TOKEN" \
@@ -107,6 +125,12 @@ them from its own dstack-encrypted env — but the daemon only honors `env_passt
 the image runtime today, not isolated deno (tee-daemon `ISSUES.md` #13, ~4-line fix).
 Until that lands, either deploy as an `image` runtime, or rely on dstack LUKS2 + per-project
 volume isolation for at-rest protection. Dev supplies both via `.env`.
+
+**Redeploys + daemon gotchas:** see [`docs/deploy.md`](docs/deploy.md) — the manifest-preserving
+redeploy recipe and the three gotchas learned live: why `listen.port` is **8080** (screenshare-frames
+owns port 3000 on the node), why an empty `container_id` in `/_api/projects` does **not** mean the
+project is down, and why you must `GET {node}/_api/projects` and read the live manifest **before
+any POST** (a partial manifest once took the instance down).
 
 ## Status
 
@@ -121,10 +145,13 @@ external data volume, attestation-pinning in the extension, token revocation, au
 
 Reference documentation lives in [`docs/`](docs/):
 
+- [`docs/architecture.md`](docs/architecture.md) — the runtime model: isolated-deno + `env_passthrough` secret injection, the multi-tenant subject model, the sealed per-identity vault, gateway path-routing on `listen.port 8080`.
 - [`docs/http-api.md`](docs/http-api.md) — every endpoint: method, path, auth required, request/response shapes, errors, plus a smoke-check→endpoint map.
 - [`docs/auth.md`](docs/auth.md) — the auth model in one place: owner secret vs web session vs scoped token, and which endpoints accept which.
+- [`docs/provider-flow.md`](docs/provider-flow.md) — the live otterscope demo and the provider flow end to end: `window.oauth3.connect({node, plugin})` → scoped token → token-backed `GET /oauth3/api/:plugin/items`, request/response shapes included.
 - [`docs/plugins.md`](docs/plugins.md) — authoring a plugin: the `Plugin` interface, how scoped-fetch constrains it, the copy-fill-register pattern.
 - [`docs/operator.md`](docs/operator.md) — operator guide: local dev, tee-daemon deploy, the dev / source-bound / attested trust postures, evidence verification, and seeding a jar.
+- [`docs/tinycloud.md`](docs/tinycloud.md) — the storage story: how oauth3 apps write to your TinyCloud (the `tc` CLI flows, capability self-grants, otter-importer as the worked example), pinned to a live node probe.
 
 ## Status
 

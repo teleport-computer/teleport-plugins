@@ -53,7 +53,19 @@ oauth3-server runs as a tee-daemon **project** (no dedicated CVM).
 > `BROWSER_SPI_URL`/`BROWSER_SPI_SECRET` (the SPI secret is mandatory — see the env table above
 > and issue #14). Copy the live file, not this snippet, when deploying.
 
-Ship a build:
+Ship a build (use the script — it reads the live manifest first and carries every field
+forward, so a redeploy can never drop the daemon-injected secrets):
+
+```bash
+bash deploy.sh https://your-daemon.dstack.phala.network [git-ref]
+# token: $TEE_DAEMON_TOKEN or ~/.tee-daemon-staging.env
+```
+
+The script pins the verified manifest (`isolation: container`, `oci_runtime: runc`,
+`listen: {port: 8080}` — path-based routing, no dedicated host port to conflict on),
+builds a flat tarball (`handler.ts` at the root, `deno check`-gated), POSTs it, then
+health-gates `/oauth3/api/health` and verifies the read-back manifest. The manual
+equivalent (do not use — this is how the env got wiped on 2026-08-10):
 
 ```bash
 TOKEN=…; CVM=https://your-daemon.dstack.phala.network
@@ -72,6 +84,14 @@ for the `image` runtime but not yet for isolated deno (`tee-daemon` `ISSUES.md` 
 fix). Until that lands: deploy as an `image` runtime, **or** rely on dstack LUKS2 +
 per-project volume isolation for at-rest protection (the daemon derives `SEAL_KEY` from TEE
 material via `GetKey → HKDF` in the intended design).
+
+> **Redeploying an existing instance?** The manifest-preserving redeploy recipe and the three
+daemon-side gotchas live in [`deploy.md`](./deploy.md): why `listen.port` is **8080** (the
+screenshare-frames project owns port 3000 on the node), why an empty `container_id` in
+`/_api/projects` does **not** mean the project is down, and the read-the-live-manifest-first
+rule (`GET {node}/_api/projects` before any POST — a partial manifest wiped the live env and
+500’d the instance for hours). This section covers first-time deploy; that page covers keeping
+it up.
 
 ## 3. Trust postures (dev / source-bound / attested)
 

@@ -3,7 +3,7 @@
 // page, grants, and a scoped token is minted and handed back to the app via its
 // requestId. The app never holds the owner secret.
 
-import { mint } from "./tokens.ts";
+import { listTokens, mint, revoke } from "./tokens.ts";
 import { recordTokenUse } from "./stepup.ts";
 import { route } from "./routing.ts";
 import type { RouteResult } from "./types.ts";
@@ -80,6 +80,17 @@ export function getConnect(id: string): ConnectReq | undefined { return reqs[id]
 export async function approveConnect(id: string, approver: string): Promise<ConnectReq | null> {
   const r = reqs[id];
   if (!r || r.status !== "pending") return null;
+  // A reconnect is a replacement grant for the same user/plugin/app tuple. Revoke the
+  // prior live grants before minting the replacement, retaining their rows as an audit trail.
+  const app = r.app ?? "";
+  for (const prior of listTokens()) {
+    if (
+      !prior.revokedAt && prior.plugin === r.plugin && prior.subject === approver &&
+      (prior.app ?? "") === app
+    ) {
+      await revoke(prior.token);
+    }
+  }
   // The minted token carries the requested caps (e.g. write:event:<id>) only after the
   // approver sees them on the consent screen — informed consent for a write capability.
   // #111: it also carries the requested account, binding the read to that account's jar.

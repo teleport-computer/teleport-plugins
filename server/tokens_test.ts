@@ -5,8 +5,10 @@
 // not prefix-bleed ("write:event:AB" ≠ "write:event:A"). Plus an in-process check that
 // the POST /api/google-calendar/event/:id endpoint enforces the same at the handler.
 
-import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { mint, revoke, verify, verifyCap } from "./tokens.ts";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { importTokens, mint, revoke, verifiedCaps, verify, verifyCap } from "./tokens.ts";
+import { decode } from "./ucan.ts";
+import { scopeReads } from "./scopes.ts";
 import handler from "./handler.ts";
 
 const PLUGIN = "google-calendar";
@@ -76,4 +78,28 @@ Deno.test("mint: subjectless token is rejected at mint time", async () => {
   await assertRejects(() => mint(PLUGIN, "", "app"), Error, "subject is required");
   const ok = await mint(PLUGIN, "u-real", "app"); // a real subject still mints
   assertEquals(ok.subject, "u-real");
+});
+
+Deno.test("grant delegation: att derives the existing scope set and tampering fails closed", async () => {
+  const t = await mint("reddit", "u-grant-test", "grant-app", ["reddit:karma"]);
+  assert(t.delegation && t.delegationCid);
+  const payload = decode(t.delegation);
+  assertEquals(Object.values(payload.att).flatMap((abilities) => Object.keys(abilities)), ["reddit/reddit:karma"]);
+  assertEquals(await verifiedCaps(t), ["reddit:karma"]);
+  assertEquals(scopeReads(await verifiedCaps(t)), scopeReads(["reddit:karma"]));
+  const parts = t.delegation.split(".");
+  parts[2] = `${parts[2][0] === "A" ? "B" : "A"}${parts[2].slice(1)}`;
+  const tampered = { ...t, delegation: parts.join(".") };
+  await assertRejects(() => verifiedCaps(tampered), Error);
+  await importTokens([{ ...tampered, token: `${t.token}-tampered` }]);
+  const response = await handler(new Request("http://localhost/api/reddit/account", {
+    headers: { Authorization: `Bearer ${t.token}-tampered` },
+  }), { env: { OWNER_SECRET: "test-owner-secret" }, dataDir: "" });
+  assertEquals(response.status, 403);
+});
+
+Deno.test("grant delegation: generated audience is persisted when app has no did:key", async () => {
+  const t = await mint("reddit", "u-audience-test", "plain-app");
+  assert(t.delegationAudience?.startsWith("did:key:z"));
+  assertEquals(decode(t.delegation!).aud, t.delegationAudience);
 });

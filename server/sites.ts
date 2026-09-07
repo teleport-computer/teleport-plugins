@@ -6,6 +6,7 @@
 
 import { loadSiteManifests, manifestScopes, SiteManifest, siteToPlugin, validateManifest } from "./plugins/declarative.ts";
 import { getPlugin, registerSitePlugin, unregisterSitePlugin } from "./plugins/registry.ts";
+import { unregisterReads } from "./reads.ts";
 import { registerSiteScopes, unregisterSiteScopes } from "./scopes.ts";
 
 const runtime = new Map<string, SiteManifest>();
@@ -24,6 +25,9 @@ export function registerSite(m: SiteManifest): void {
 
 export function unregisterSite(id: string): boolean {
   if (!runtime.has(id)) return false;
+  // A removed site's named reads must go with it, or /api/<site>/<kind> keeps answering from a
+  // plugin that no longer exists.
+  unregisterReads(id);
   unregisterSitePlugin(id);
   unregisterSiteScopes(id);
   runtime.delete(id);

@@ -44,6 +44,11 @@ export const nytimesPlugin: Plugin = {
   id: "nytimes",
   label: "NYTimes saved (browser-path)",
   cookieDomains: [".nytimes.com"],
+  // #12: server-side replay is datadome-403'd (see the header comment) — this instance is
+  // cookie-only, so nytimes is honestly NOT available here. The marker makes /api/plugins
+  // and the dashboard say so instead of reading as working.
+  path: "browser",
+  available: false,
 
   loggedIn(jar: Jar): boolean {
     return !!jar["NYT-S"];

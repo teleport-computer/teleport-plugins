@@ -1,0 +1,38 @@
+# oauth3 #12 — Tier-1 transcript against deployed staging (2026-08-15T17:51:23Z)
+GET https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/_api/version
+{"service":"oauth3-server","commit":"a45334e"}
+
+## POST /api/login (u-swarm userKey)
+{"ok":true,"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","session":"sess-41b4f994ab7f47d1bc0be349ab68115db4e829d65f754f199ed2c01f9b720f64"}
+
+## GET /api/plugins (Bearer session) — nytimes entry + jars:
+            "id": "nytimes",
+            "label": "NYTimes saved (browser-path)",
+            "cookieDomains": [
+                ".nytimes.com"
+
+## POST /api/connect {plugin:nytimes, app:demo-app, scope:read}
+{"requestId":"req-127316d9ff604cb1b4a7ff401d404d94","approveUrl":"https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/approve/req-127316d9ff604cb1b4a7ff401d404d94"}
+
+## POST /api/connect//approve
+not found
+
+## POST /api/connect//approve (Bearer session)
+not found
+
+## GET /api/connect/ (poll status → token)
+not found
+
+## GET /api/nytimes/items (Bearer scoped token) — acceptance box 3
+NO TOKEN
+requestId=req-89ef1daefdc54b3e8a12673f3fa59ec6
+
+## POST /api/connect/req-89ef1daefdc54b3e8a12673f3fa59ec6/approve (Bearer session)
+{"ok":true,"status":"approved"}
+
+## GET /api/connect/req-89ef1daefdc54b3e8a12673f3fa59ec6 (poll status → token)
+{"status":"approved","token":"tok-nytimes-536c51deb43843478c8e5503"}
+
+## GET /api/nytimes/items (Bearer scoped token) — acceptance box 3
+{"error":"NYT blocks server-side replay (datadome 403) — nytimes is a BROWSER-PATH plugin; run it via the browser (Teleport Computer), not the frozen path"}
+HTTP_STATUS:502

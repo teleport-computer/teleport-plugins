@@ -7,6 +7,7 @@ import {
   score,
 } from "./stepup.ts";
 import { approveConnect, createConnect } from "./connect.ts";
+import { listTokens, verify } from "./tokens.ts";
 
 // Each test starts from a clean, in-memory consent ledger so first-use assertions are
 // deterministic and independent of test ordering.
@@ -79,4 +80,29 @@ Deno.test("stepup: connect-approved token never re-challenges", async () => {
   // And a genuinely-new token (not from a connect) still trips exactly one challenge.
   const fresh = "tok-redriver-zzyyxxwwvvuu";
   assertEquals(score(fresh, "reddit", "account").decision, "challenge");
+});
+
+Deno.test("connect approval replaces the live grant for the same subject/plugin/app", async () => {
+  const app = `dedup-${crypto.randomUUID()}`;
+  const approved: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const request = await createConnect("reddit", undefined, app);
+    const result = await approveConnect(request.requestId, "u-dedup");
+    if (!result?.token) throw new Error("connect approval did not mint a token");
+    approved.push(result.token);
+  }
+
+  assertEquals(approved.filter((token) => verify(token, "reddit") !== null), [approved[2]]);
+  const trail = listTokens().filter((t) =>
+    t.subject === "u-dedup" && t.plugin === "reddit" && t.app === app
+  );
+  assertEquals(trail.length, 3);
+  assertEquals(trail.filter((t) => !t.revokedAt).map((t) => t.token), [approved[2]]);
+  assertEquals(trail.filter((t) => t.revokedAt).length, 2);
+
+  const otherApp = await createConnect("reddit", undefined, `${app}-other`);
+  const other = await approveConnect(otherApp.requestId, "u-dedup");
+  if (!other?.token) throw new Error("different app approval did not mint a token");
+  assertEquals(verify(other.token, "reddit") !== null, true);
+  assertEquals(verify(approved[2], "reddit") !== null, true);
 });

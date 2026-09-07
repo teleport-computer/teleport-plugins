@@ -55,6 +55,13 @@ export function dashboardPage(): string {
  .proposal:first-child{border-top:0}
  .proposal .copy{flex:1 1 20rem}.proposal .copy b{display:block}.proposal .copy .m{display:block;margin-top:5px}
  .proposal .scope{margin-top:7px;color:var(--i1-text);font-size:13px}
+ .appgroup{border-top:1px solid var(--rule);padding:12px 0}
+ .appgroup:first-child{border-top:0}
+ .apphead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:3px}
+ .apphead .name{font-weight:800}
+ .apphead .count{font:11px var(--mono);color:var(--faint)}
+ .apphead .btn{padding:5px 9px;font-size:11px}
+ .appgroup .item{padding:7px 0 7px 12px}
 </style></head><body>
 <header>
   <div class=brand>
@@ -99,6 +106,10 @@ export function dashboardPage(): string {
 
  function renderSites(ps){const el=$('sites');if(!ps.length){el.innerHTML='<div class="empty">No sites available.</div>';return;}
    el.innerHTML=ps.map(p=>{const j=p.jar||{};const name='<span class=name>'+esc(p.label)+'</span>';
+     // #12: browser-path plugins are NOT connectable on this cookie-only instance — say so
+     // plainly instead of a normal saved/not-saved row that reads as working.
+     if(p.path==='browser'){return '<div class=item><div class=srow>'+name+'<span class="pill warn">browser-path</span></div>'
+       + '<div class=m>browser-path — not available on this cookie-only instance (reads need the browser, #14)</div></div>';}
      if(!j.present){return '<div class=item><div class=srow>'+name+'<span class="pill bad">not saved</span></div></div>';}
      const age=j.updatedAt?Date.now()-j.updatedAt:Infinity;const stale=age>FRESH;
      const frac=stale?1:Math.max(.06,1-age/FRESH);const pct=(frac*100|0);
@@ -108,7 +119,12 @@ export function dashboardPage(): string {
        + '<div class=meter><span>'+j.count+' cookies</span>'+bar+'<span>'+ago(j.updatedAt)+'</span></div></div>';}).join('');}
  function renderApps(ts){const el=$('apps');const live=ts.filter(t=>!t.revokedAt);
    if(!live.length){el.innerHTML='<div class="empty">No apps connected yet.</div>';return;}
-   el.innerHTML=live.map(t=>'<div class=item><span class=name>'+esc(t.app||'(unnamed app)')+'</span><span class=meta><span class=chip>'+esc(t.plugin)+'</span> <span class=m>'+ago(t.createdAt)+'</span></span><button class="btn danger sm" data-token="'+esc(t.token)+'">revoke</button></div>').join('');}
+   const groups=new Map();live.forEach(t=>{const app=t.app||'(unnamed app)';if(!groups.has(app))groups.set(app,[]);groups.get(app).push(t);});
+   el.innerHTML=[...groups.entries()].map(([app,items])=>'<div class=appgroup data-app-group>'+
+     '<div class=apphead><span><span class=name>'+esc(app)+'</span> <span class=count>'+items.length+' token'+(items.length===1?'':'s')+'</span></span>'+
+     '<button class="btn danger" data-revoke-app="'+esc(app)+'">revoke all</button></div>'+
+     items.map(t=>'<div class=item><span class=name>'+esc(t.plugin)+'</span><span class=meta><span class=m>'+ago(t.createdAt)+'</span></span><button class="btn danger sm" data-token="'+esc(t.token)+'">revoke</button></div>').join('')+
+     '</div>').join('');}
  function sameReads(a,b){return a.length===b.length&&[...a].sort().join('\0')===[...b].sort().join('\0');}
  function renderPromote(ps,scopes,ts){const el=$('promote');if(!ps.length){el.innerHTML='<div class="empty">No observed usage to tighten yet.</div>';return;}
    el.innerHTML=ps.map(p=>{const scope=scopes.find(s=>s.plugin===p.plugin&&sameReads(s.reads,p.proposed_ingredient.reads));
@@ -134,6 +150,11 @@ export function dashboardPage(): string {
    e.target.disabled=true;e.target.textContent='revoking…';
    try{const r=await fetch('api/tokens/'+encodeURIComponent(t),{method:'DELETE',headers:authH()});if(!r.ok)throw new Error('revoke '+r.status);await load();}
    catch(err){showErr(err.message);e.target.disabled=false;e.target.textContent='revoke';}});
+ $('apps').addEventListener('click',async e=>{const app=e.target.dataset&&e.target.dataset.revokeApp;if(!app)return;
+   const group=e.target.closest('[data-app-group]');const tokens=[...group.querySelectorAll('[data-token]')].map(x=>x.dataset.token);
+   e.target.disabled=true;e.target.textContent='revoking…';
+   try{for(const token of tokens){const r=await fetch('api/tokens/'+encodeURIComponent(token),{method:'DELETE',headers:authH()});if(!r.ok)throw new Error('revoke '+r.status);}await load();}
+   catch(err){showErr(err.message);e.target.disabled=false;e.target.textContent='revoke all';}});
  $('promote').addEventListener('click',async e=>{const b=e.target.dataset;if(!b||!b.tightenToken)return;e.target.disabled=true;e.target.textContent='tightening…';
    try{const r=await fetch('api/tokens/'+encodeURIComponent(b.tightenToken)+'/tighten',{method:'POST',headers:{...authH(),'Content-Type':'application/json'},body:JSON.stringify({ingredient:b.tightenScope})});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'tighten '+r.status);}await load();}
    catch(err){showErr(err.message);e.target.disabled=false;e.target.textContent='tighten';}});

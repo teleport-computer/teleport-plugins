@@ -1,0 +1,52 @@
+oa153 two-pod migration driver — A(origin)=https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3  B(dest)=http://127.0.0.1:3199
+
+[0] A GET /_api/version -> 200 {"service":"oauth3-server","commit":"afab6bf"}
+    B GET /_api/version -> 200 {"service":"oauth3-server","commit":"afab6bf"}
+    PASS  both pods pinned to the PR head commit afab6bf
+
+[1] subject identity (fresh Ed25519, used on BOTH pods): did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD
+[2] A did:key ceremony -> session sess-a475d378c…
+    PASS  A session subject is the did:key
+[3] A POST /api/cookies (labeled sample, not live data) -> 200 {"ok":true,"plugin":"otter","account":"default","count":1}
+    PASS  sample jar seeded on A
+[4] A owner POST /api/tokens (caps:["jar"]) -> 200 token=tok-otter-7f49d2efaf9545db88001bd9
+[5] A GET /api/otter/jar with that token (pre-migration) -> 200 {"plugin":"otter","subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","jar":{"session":"oa153-sample-co
+    PASS  pre-migration jar read works on A (control for the later 401)
+[6] A POST /api/export (did:key ceremony) -> 200 entries=1 subject=did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD
+    PASS  export returns an X25519-AES-256-GCM envelope for the subject
+    PASS  envelope ciphertext carries no plaintext jar
+[7] B POST /api/import as a DIFFERENT did:key -> 403 {"error":"destination session does not prove bundle subject"}
+    PASS  destination requires the bundle's own subject
+[8] B did:key ceremony with the SAME subject key -> session sess-01e72d66c…
+[9] B POST /api/import -> 200 subject=did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD entries=1 grants=1
+    receipt: {"subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","destPod":"did:key:z6Mkr2PhTJtikDEbWkbghV8a6bz4gk3iF2YQTwi15agtg2SX","importedAt":"2026-08-16T12:19:38.467Z","signature":"Hs5Es+lOtkt3P+expEolLmaVvmALWEEV+6XPdfhj8OK/DgmjZ0Y6jLxbBq+JZD6f2heF1JygekqhZ0Lka3yCDQ=="}
+    PASS  import installs 1 vault entry + 1 grant for the SAME subject
+    PASS  receipt is a signed {subject, destPod, importedAt}
+[10] B owner POST /api/tokens (caps:["jar"]) -> 200 token=tok-otter-5d2df44dfb5f40a288790fe1
+[11] B GET /api/otter/jar with the new scoped token -> 200 {"plugin":"otter","subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","jar":{"session":"oa153-sample-cookie"}}
+    PASS  imported jar readable on B via a scoped token minted there
+[12] B GET /api/otter/jar with the MIGRATED grant token (from A) -> 200 {"plugin":"otter","subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","jar":{"session":"oa153-sample-cookie"}}
+    PASS  migrated grant row works on B (grant continuity)
+[13] A POST /api/export/confirm with a TAMPERED receipt (owner auth) -> 400 {"error":"invalid destination receipt"}
+    PASS  tampered receipt rejected (Ed25519 signature over the receipt text)
+[14] A POST /api/export/confirm (did:key session, valid receipt) -> 200 {"ok":true,"subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","deleted":1,"revoked":1}
+    PASS  confirm deletes the migrating vault row and revokes the subject's tokens
+[15] A GET /api/otter/jar with the pre-migration token (post-confirm) -> 401 {"error":"unauthorized"}
+    PASS  subject's old tokens are revoked on A (401)
+[16] A GET /api/plugins (did:key session) -> otter jars: []
+    PASS  vault row gone on A
+[17] A GET /api/audit (owner) — last 4:
+         {"ts":1786755628419,"action":"read","detail":{"plugin":"otter","item":"list","by":"otterscope"}}
+         {"ts":1786755618182,"action":"gate","detail":{"plugin":"otter","readKind":"items","decision":"allow","by":"otterscope"}}
+         {"ts":1786755617518,"action":"connect.approve","detail":{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"otter","app":"otterscope","requestId":"req-68267023962541ae8907ca7ed457148f"}}
+         {"ts":1786755617185,"action":"connect.request","detail":{"plugin":"otter","app":"otterscope","requestId":"req-68267023962541ae8907ca7ed457148f","friction":"dev-mode"}}
+[18] B GET /api/audit (owner) — last 3:
+         {"ts":1786882778467,"action":"import","detail":{"subject":"did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD","entries":1,"grants":1}}
+         {"ts":1786882737646,"action":"jar.release","detail":{"plugin":"otter","subject":"did:key:z6Mknc68mpDrX2QRafKixVVcriQmHTdeyQArMpDrgs39nLMz","count":1,"by":"migration-demo"}}
+         {"ts":1786882737637,"action":"import","detail":{"subject":"did:key:z6Mknc68mpDrX2QRafKixVVcriQmHTdeyQArMpDrgs39nLMz","entries":1,"grants":1}}
+
+RESULT: all checks passed — two-instance migration: export(A) → ceremony/import(B) → scoped read on B → confirm(A) → row gone + 401 on A
+
+[19] A GET /api/audit (owner) — migration actions for this subject (z6Mkezha…):
+         {"ts": 1786882778616, "action": "export.confirm", "detail": {"subject": "did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD", "deleted": 1, "revoked": 1, "destPod": "did:key:z6Mkr2PhTJtikDEbWkbghV8a6bz4gk3iF2YQTwi15agtg2SX"}}
+         {"ts": 1786882778405, "action": "export", "detail": {"subject": "did:key:z6Mkezha1QwMhyfh3uWoHoXj4yYuz4RtSPBDPeyebcubHPiD", "entries": 1, "grants": 1}}

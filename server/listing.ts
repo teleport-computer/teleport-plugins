@@ -45,6 +45,41 @@ export const STATIC_LISTING: Listing[] = [
       "Lets a friend read your Amazon cart to suggest organic substitutions under a scoped, substitute-only capability — reads cart line items only, never checkout, address, payment, or order history.",
     discharge: 1,
   },
+  {
+    appId: "reddit-karma",
+    allowedPlugins: ["reddit"],
+    maxScope: "read",
+    statement: "Shows your Reddit karma and saved items under a scoped, revocable read token — read-only, never posts.",
+    discharge: 1,
+  },
+  {
+    appId: "timeline-peek",
+    allowedPlugins: ["twitter"],
+    maxScope: "read",
+    statement: "Renders a read-only peek of your X timeline under a scoped, revocable read token — never posts or follows.",
+    discharge: 1,
+  },
+  {
+    appId: "otterscope",
+    allowedPlugins: ["otter"],
+    maxScope: "read",
+    statement: "Reads your Otter meeting transcripts under a scoped, revocable read token to render highlights — read-only.",
+    discharge: 1,
+  },
+  {
+    appId: "feedling-web",
+    allowedPlugins: ["youtube"],
+    maxScope: "read",
+    statement: "Reads your YouTube feed items under a scoped, revocable read token to render a feed — read-only.",
+    discharge: 1,
+  },
+  {
+    appId: "zai-usage",
+    allowedPlugins: ["zai"],
+    maxScope: "read",
+    statement: "Reads your z.ai GLM Coding Plan usage (quota %, tokens, per-model) under a scoped, revocable read token — read-only, never your API key or prompts.",
+    discharge: 1,
+  },
 ];
 
 /**

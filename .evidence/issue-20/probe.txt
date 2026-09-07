@@ -1,0 +1,12 @@
+# TinyCloud node probe — issue #20 — captured 2026-08-15T21:22:27Z
+
+$ NODE=https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/tinycloud-bakeoff
+$ curl -s $NODE/version
+{"protocol":1,"version":"1.4.2","features":["kv","delegation","sharing","sql","hooks","signed-urls","encryption"],"nodeId":"did:key:z6MktTz1XbbgSAzKcKXLvGi5xo1erzVB8aXwRwy9vZ8242e1","inTEE":false}
+
+$ curl -s $NODE/info
+{"protocol":1,"version":"1.4.2","features":["kv","delegation","sharing","sql","hooks","signed-urls","encryption"],"nodeId":"did:key:z6MktTz1XbbgSAzKcKXLvGi5xo1erzVB8aXwRwy9vZ8242e1","inTEE":false}
+
+# oauth3 staging (same CVM) at probe time:
+$ curl -s $WEBHOST_STAGING/oauth3/_api/version
+{"service":"oauth3-server","commit":"c2fe061"}

@@ -23,6 +23,7 @@ export interface Payload {
   nnc: string;
   prf: string[];
   att: Att;
+  binding?: string;
 }
 export interface MintOpts {
   issuer: Keypair;
@@ -32,11 +33,29 @@ export interface MintOpts {
   notBefore?: number;
   proofs?: string[];
   now?: number;
+  binding?: string;
+}
+export interface BindingQuoteOpts {
+  instance: Keypair;
+  app: string;
+  measurement: string;
+  nonce: string;
+  expiresInSec: number;
+  now?: number;
+}
+export interface BindingQuotePayload {
+  iss: string;
+  app: string;
+  measurement: string;
+  nonce: string;
+  exp: number;
 }
 export interface VerifyOpts {
   root: string;
   now?: number;
   proofs?: ProofStore;
+  admitApp?: (app: string, measurement: string) => boolean | Promise<boolean>;
+  usedBindingNonces?: Set<string>;
 }
 export type ProofStore = Map<string, string> | Record<string, string>;
 
@@ -51,6 +70,13 @@ function unb64(s: string): Uint8Array {
   return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
 }
 const jsonPart = (v: unknown) => b64(enc.encode(JSON.stringify(v)));
+const APP_ID = /^appauth:[a-z0-9-]+:0x[0-9a-f]{40}$/;
+
+function assertAudience(audience: string): void {
+  if (!/^did:key:z[^#]+$/.test(audience) && !APP_ID.test(audience)) {
+    throw new Error(`invalid audience: ${audience}`);
+  }
+}
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function b58(bytes: Uint8Array): string {
@@ -200,13 +226,29 @@ async function sign(payload: Payload, key: CryptoKey): Promise<string> {
   const sig = new Uint8Array(await crypto.subtle.sign("Ed25519", key, source(enc.encode(input))));
   return `${input}.${b64(sig)}`;
 }
+async function signBinding(payload: BindingQuotePayload, key: CryptoKey): Promise<string> {
+  const h = jsonPart({ alg: "EdDSA", typ: "oauth3-app-binding", ucv: "0.1-oauth3" });
+  const body = jsonPart(payload), input = `${h}.${body}`;
+  const sig = new Uint8Array(await crypto.subtle.sign("Ed25519", key, source(enc.encode(input))));
+  return `${input}.${b64(sig)}`;
+}
+export async function createBindingQuote(o: BindingQuoteOpts): Promise<string> {
+  if (!APP_ID.test(o.app)) throw new Error(`invalid app identity: ${o.app}`);
+  if (!o.measurement || !o.nonce) throw new Error("binding quote requires measurement and nonce");
+  const now = o.now ?? Math.floor(Date.now() / 1000);
+  return await signBinding({
+    iss: o.instance.did,
+    app: o.app,
+    measurement: o.measurement,
+    nonce: o.nonce,
+    exp: now + o.expiresInSec,
+  }, o.instance.privateKey);
+}
 export async function mint(o: MintOpts): Promise<string> {
   if (!Number.isInteger(o.expiresInSec) || o.expiresInSec <= 0) {
     throw new Error("expiresInSec must be positive");
   }
-  if (!/^did:key:z/.test(o.audience) || o.audience.includes("#")) {
-    throw new Error("aud must be a bare did:key DID");
-  }
+  assertAudience(o.audience);
   const now = o.now ?? Math.floor(Date.now() / 1000);
   const payload: Payload = {
     iss: o.issuer.did,
@@ -217,6 +259,7 @@ export async function mint(o: MintOpts): Promise<string> {
     att: capabilityMap(o.capabilities),
   };
   if (o.notBefore !== undefined) payload.nbf = o.notBefore;
+  if (o.binding !== undefined) payload.binding = o.binding;
   return await sign(payload, o.issuer.privateKey);
 }
 export async function delegate(o: MintOpts): Promise<string> {
@@ -241,9 +284,8 @@ function parse(token: string): { payload: Payload; signingInput: string; signatu
   if (typeof payload.iss !== "string" || !payload.iss.startsWith("did:key:z")) {
     throw new Error("missing or invalid iss");
   }
-  if (typeof payload.aud !== "string" || !/^did:key:z[^#]+$/.test(payload.aud)) {
-    throw new Error("missing or invalid aud");
-  }
+  if (typeof payload.aud !== "string") throw new Error("missing or invalid aud");
+  assertAudience(payload.aud);
   if (
     !Number.isFinite(payload.exp) || typeof payload.nnc !== "string" || !Array.isArray(payload.prf)
   ) throw new Error("missing required claim");
@@ -290,6 +332,50 @@ function proof(store: ProofStore | undefined, cid: string): string {
   if (cidForToken(token) !== cid) throw new Error(`wrong CID for proof ${cid}`);
   return token;
 }
+async function verifyBindingQuote(
+  quote: string,
+  instance: string,
+  app: string,
+  opts: VerifyOpts,
+): Promise<void> {
+  const parts = quote.split(".");
+  if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
+    throw new Error("malformed binding quote");
+  }
+  let header: unknown, payload: BindingQuotePayload;
+  try {
+    header = JSON.parse(dec.decode(unb64(parts[0])));
+    payload = JSON.parse(dec.decode(unb64(parts[1]))) as BindingQuotePayload;
+  } catch {
+    throw new Error("malformed binding quote JSON");
+  }
+  if (
+    JSON.stringify(header) !==
+      JSON.stringify({ alg: "EdDSA", typ: "oauth3-app-binding", ucv: "0.1-oauth3" })
+  ) {
+    throw new Error("unsupported binding quote header");
+  }
+  if (
+    payload.iss !== instance || payload.app !== app || !APP_ID.test(payload.app) ||
+    !payload.measurement || !payload.nonce || !Number.isFinite(payload.exp)
+  ) throw new Error("invalid binding quote claims");
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
+  if (now >= payload.exp) throw new Error("binding quote expired");
+  const valid = await crypto.subtle.verify(
+    "Ed25519",
+    await pubKeyFromDid(payload.iss),
+    source(unb64(parts[2])),
+    source(enc.encode(`${parts[0]}.${parts[1]}`)),
+  );
+  if (!valid) throw new Error("bad binding quote signature");
+  if (!opts.admitApp) throw new Error("app admission verifier is required");
+  if (!await opts.admitApp(payload.app, payload.measurement)) {
+    throw new Error("app measurement is not admitted");
+  }
+  if (!opts.usedBindingNonces) throw new Error("binding nonce store is required");
+  if (opts.usedBindingNonces.has(payload.nonce)) throw new Error("binding quote replayed");
+  opts.usedBindingNonces.add(payload.nonce);
+}
 async function verifyAt(token: string, opts: VerifyOpts, seen: Set<string>): Promise<Payload> {
   if (seen.has(token)) throw new Error("cyclic proof chain");
   seen.add(token);
@@ -317,7 +403,12 @@ async function verifyAt(token: string, opts: VerifyOpts, seen: Set<string>): Pro
     if (typeof cid !== "string") throw new Error("invalid proof CID");
     const parentToken = proof(opts.proofs, cid);
     const parent = await verifyAt(parentToken, opts, new Set(seen));
-    if (issuer !== parent.aud) throw new Error("delegation issuer does not equal parent audience");
+    if (issuer !== parent.aud) {
+      if (!APP_ID.test(parent.aud) || !payload.binding) {
+        throw new Error("delegation issuer does not equal parent audience");
+      }
+      await verifyBindingQuote(payload.binding, issuer, parent.aud, opts);
+    }
     if (payload.exp > parent.exp) throw new Error("delegation expiry widens parent");
     if ((payload.nbf ?? 0) < (parent.nbf ?? 0)) throw new Error("delegation nbf widens parent");
     const parents = capabilities(parent.att);

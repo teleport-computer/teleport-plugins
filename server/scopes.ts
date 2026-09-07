@@ -27,6 +27,11 @@ export const SCOPE_INGREDIENTS: Record<string, { plugin: string; reads: string[]
       label:
         "read-only · subreddit listings and search fetched as your Reddit session · not your account, saved posts, feed, votes, or messages",
     },
+    "codex:usage-read": {
+      plugin: "codex",
+      reads: ["quota"],
+      label: "read-only · your ChatGPT/Codex 5-hour and weekly usage windows · not prompts, responses, or account credentials",
+    },
     // #88: novel consumed scopes seeded by the composable utilities (feedling, calendar-share).
     // Each maps to a real read chokepoint in handler.ts, so a token carrying the cap is
     // confined exactly like otter:live-follow / reddit:karma — the consumed claim is enforced,
@@ -35,7 +40,17 @@ export const SCOPE_INGREDIENTS: Record<string, { plugin: string; reads: string[]
       plugin: "youtube",
       reads: ["feed"], // the /feed reconstruction of watch history (videos + Shorts)
       label:
-        "read-only · your watch history (videos and Shorts) · not your subscriptions, likes, comments, playlists, or uploads",
+        "read-only · your watch history (videos and Shorts) · not your liked videos, subscriptions, comments, playlists, or uploads",
+    },
+    // #144: the liked-videos read. A distinct read chokepoint (readKind "liked" at
+    // /api/youtube/liked) from watch history, so a history-only token CANNOT reach liked
+    // videos and vice versa — the confinement is the point. The label lists what's OUT so the
+    // approve dialog can't promise more than the cap grants (RFC 0004 anti-hollow-green).
+    "youtube:liked": {
+      plugin: "youtube",
+      reads: ["liked"], // GET /api/youtube/liked — the owner's liked-videos playlist (LL)
+      label:
+        "read-only · your liked videos (id, title, channel, length) · not your watch history, subscriptions, comments, playlists, or uploads",
     },
     "calendar:free-busy": {
       plugin: "google-calendar",
@@ -65,6 +80,14 @@ export const SCOPE_INGREDIENTS: Record<string, { plugin: string; reads: string[]
       label:
         "write · substitute ONE cart line — remove an ASIN, add ONE comparable ASIN within a price band and the same category · CANNOT check out, add arbitrary items, change address/payment, raise quantity, or read your cart/order history",
     },
+    // #76: the first usage/metering scope. A token confined to the /quota read chokepoint —
+    // your z.ai GLM Coding Plan usage numbers, nothing that touches the key or coding traffic.
+    "zai:usage-read": {
+      plugin: "zai",
+      reads: ["quota"],
+      label:
+        "read-only · your z.ai Coding Plan usage numbers (5-hour and weekly quota %, tokens, per-model) · not your API key, prompts, code, or account settings",
+    },
   };
 
 // Per-plugin capability statements (RFC 0009 step 1) — the operator-authored sentence shown
@@ -81,12 +104,16 @@ export const PLUGIN_CAPABILITIES: Record<string, { plugin: string; statement: st
   youtube: {
     plugin: "youtube",
     statement:
-      "CAN read your watch history (videos and Shorts, each flagged isShort) and a logged-in screenshot of youtube.com. CANNOT like, subscribe, comment, remove from history, or upload.",
+      "CAN read your watch history (videos and Shorts, each flagged isShort), your liked videos (id, title, channel, length), and a logged-in screenshot of youtube.com. CANNOT like, subscribe, comment, remove from history, or upload.",
   },
   reddit: {
     plugin: "reddit",
     statement:
       "CAN read your saved posts and comments (and each item's full body/url), subreddit listings and search results, your account identity and karma (comment + link), and a logged-in screenshot of reddit.com. CANNOT save, vote, post, comment, or edit.",
+  },
+  codex: {
+    plugin: "codex",
+    statement: "CAN read your ChatGPT/Codex plan usage windows and reset times. CANNOT read prompts, responses, or expose the bearer credential.",
   },
   nytimes: {
     plugin: "nytimes",
@@ -107,6 +134,11 @@ export const PLUGIN_CAPABILITIES: Record<string, { plugin: string; statement: st
     plugin: "amazon",
     statement:
       "CAN read your Amazon cart line items and a logged-in screenshot of your cart; a token MAY also carry an `amazon:cart-substitute` cap to swap ONE cart line for a comparable item within a price band and the same category. CANNOT check out, change address/payment, add arbitrary items, raise quantity, or read order history.",
+  },
+  zai: {
+    plugin: "zai",
+    statement:
+      "CAN read your z.ai GLM Coding Plan usage numbers (5-hour and weekly quota %, total tokens, per-model breakdown, search/reader usage). CANNOT see your API key, prompts, code, or account settings, and can make no changes.",
   },
 };
 
@@ -210,6 +242,13 @@ export const APP_DECLARATIONS: AppDeclaration[] = [
     consumes: ["calendar:free-busy"],
     offers: [],
     note: "the clearest novel-scope candidate: your upcoming free/busy, nothing else",
+  },
+  {
+    id: "zai-usage",
+    name: "z.ai usage — Coding Plan quotas",
+    consumes: ["zai:usage-read"],
+    offers: [],
+    note: "reads your z.ai Coding Plan usage numbers only; also feeds the swarm quota gate provider-truth",
   },
 ];
 

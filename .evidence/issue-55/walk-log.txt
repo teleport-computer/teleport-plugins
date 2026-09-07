@@ -1,0 +1,21 @@
+SUBJECT=u-eaf13541f186c7c5f466dc04e2e5da4b
+href: https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/app?plugin=reddit
+provider object before neutralize: object
+provider neutralized (extension installed in rig; provider object removed pre-click — see flow.md)
+provider after neutralize: undefined
+clicked #login (real pointer)
+approveUrl: https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/approve/req-b654ec1f61db4748b176d905c4747cce
+no 'extension not found' dead end: True
+  shot 01-approve-link-rendered.png (49KB b64)
+approve page href: https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/approve/req-b654ec1f61db4748b176d905c4747cce
+approve buttons: [["","btn approve","Approve (dev-mode)"],["","btn ghost deny","Deny"]]
+  shot 02-consent-screen.png (80KB b64)
+clicked approve button (real pointer): True
+approve page says: What this token can do. CAN read your saved posts and comments (and each item's full body/url), your account identity and karma (comment + link), and a logged-i
+  shot 03-approved.png (83KB b64)
+run2 approveUrl: https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/approve/req-0a26fdddc53c4e2796a917eac83ecbb8
+run2 approve POST fired: fired
+run2 OK: pill='scoped token ✓' rows=20 items-line='read with scoped token, not your cookies | items 51 saved posts'
+  shot 04-items-rendered.png (133KB b64)
+ALL-WALK-STEPS-DONE
+{"service":"oauth3-server","commit":"e4869fc"}

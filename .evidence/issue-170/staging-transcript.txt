@@ -1,0 +1,16 @@
+=== GET https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/_api/version (pin) ===
+{"service":"oauth3-server","commit":"d101447"}
+
+=== GET https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/api/jars — NO auth (expect 401 owner-only) ===
+{"error":"owner only"}
+HTTP 401
+
+=== GET https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/api/jars — owner secret ===
+{"jars":[{"subject":"did:key:z6MknEBdh6GpdSAwW1ADow8BgjB1RKL5KEwPyD6iH7ezmznD","plugin":"otter","account":"default","updatedAt":1786879024324,"count":1},{"subject":"did:key:z6Mkszhq9fzqBcgq4XPiosxBPWHoVThS9CzRARqjxskYmeeC","plugin":"otter","account":"default","updatedAt":1786878917570,"count":1},{"subject":"did:key:z6MkuMJ816whok1CRHn2CLdDSseZ7mNE3VhNYYL8nwX9cF3L","plugin":"otter","account":"default","updatedAt":1786879042056,"count":1},{"subject":"owner","plugin":"zai","account":"default","updatedAt":1786675972784,"count":1},{"subject":"u-9c0e1e82742b028dfd07a0a8cccf8581","plugin":"twitter","account":"22847791","updatedAt":1786828774969,"count":20},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"amazon","account":"default","updatedAt":1786564249606,"count":32},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"nytimes","account":"default","updatedAt":1786814094364,"count":1},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"otter","account":"default","updatedAt":1786674841228,"count":42},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"reddit","account":"default","updatedAt":1786674840543,"count":21},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"twitter","account":"22847791","updatedAt":1786674840889,"count":32},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"youtube","account":"default","updatedAt":1786909784962,"count":31},{"subject":"u-eaf13541f186c7c5f466dc04e2e5da4b","plugin":"zai","account":"default","updatedAt":1786676068376,"count":1}]}
+HTTP 200
+
+=== GET https://78ffc78c25e0c8a9e64bb3a969ba6f226abae62d-8080.dstack-pha-prod7.phala.network/oauth3/api/audit — owner secret (ring buffer; filtered for the acceptance check) ===
+audit entries visible: 1000 (retention cap 1000 — #120/PR #147)
+cookies.sync entries for plugin=zai still in the ring buffer: 0
+cookies.sync entries (all plugins) still in the ring buffer: 8 -> otter, youtube
+top actions in buffer: stepup.challenged=601, gate=77, connect.request=71, token.revoke=70, token.mint=44

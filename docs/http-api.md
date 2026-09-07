@@ -77,6 +77,16 @@ an expired jar as `409`, an unknown plugin as `404`, etc.
 - Response: `{ "ok": boolean, "revoked": boolean }`
 - Once revoked, reads with that token return `401` (see `verify()` in `tokens.ts`).
 
+### `POST /api/introspect`
+- Auth: scoped token in `Authorization: Bearer <token>`; unknown, revoked, or missing
+  tokens are answered as inactive rather than rejected.
+- Request: no body.
+- Active response `200`:
+  `{ "active": true, "plugin": "otter", "subject": "u-…", "app": "sink-app", "caps": [] }`
+- Inactive response `200`: `{ "active": false }`
+- Revoked and garbage tokens have the same inactive shape, so callers cannot probe whether a
+  token was once valid. Revocation is reflected on the next introspection request without a restart.
+
 ## Connect / approval handshake (delegation)
 
 ### `POST /api/connect`

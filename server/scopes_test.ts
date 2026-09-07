@@ -59,6 +59,37 @@ Deno.test("scopeReads: calendar:free-busy confines to items", () => {
   assert(!r.has("screenshot"), "screenshot out of scope -> gate denies");
 });
 
+// --- #144: the liked-videos read is a DISTINCT chokepoint from watch history. youtube:liked
+// confines to readKind "liked" (GET /api/youtube/liked) and excludes "feed" (watch history);
+// youtube:history excludes "liked". The cross-denial is the security property the issue
+// pins (a history token must NOT reach liked videos, and vice versa).
+Deno.test("scopeReads: youtube:liked confines to liked (excludes feed)", () => {
+  const r = scopeReads(["youtube:liked"])!;
+  assert(r !== null);
+  assert(r.has("liked"), "liked is in scope -> gate passes at /api/youtube/liked");
+  assert(!r.has("feed"), "feed is out of scope -> gate denies at /api/youtube/feed (history)");
+  assert(!r.has("items"), "items is out of scope -> gate denies at /api/youtube/items");
+  assert(!r.has("screenshot"), "screenshot out of scope -> gate denies");
+});
+
+Deno.test("scopeReads: youtube:history excludes liked (the cross-denial)", () => {
+  const r = scopeReads(["youtube:history"])!;
+  assert(r !== null);
+  assert(r.has("feed"), "feed is in scope -> gate passes at /api/youtube/feed");
+  assert(!r.has("liked"), "liked is out of scope -> gate denies at /api/youtube/liked");
+});
+
+Deno.test("scopeIngredient: youtube:liked is in the enforced ledger with reads=[liked]", () => {
+  const ing = scopeIngredient("youtube:liked")!;
+  assertEquals(ing.plugin, "youtube");
+  assertEquals([...ing.reads], ["liked"]);
+  assert(ing.label.includes("liked videos"), "label names liked videos");
+  assert(ing.label.includes("watch history"), "label names what's excluded (watch history)");
+  // anti-hollow-green: the history label must NO LONGER claim likes are unreadable.
+  assert(!scopeIngredient("youtube:history")!.label.includes("likes"),
+    "youtube:history label no longer mentions 'likes' as excluded");
+});
+
 Deno.test("scopeIngredient: youtube:history + calendar:free-busy are in the enforced ledger", () => {
   assertEquals(scopeIngredient("youtube:history")!.plugin, "youtube");
   assertEquals([...scopeIngredient("youtube:history")!.reads], ["feed"]);
@@ -94,6 +125,40 @@ Deno.test("handler GET /api/otter/items — read-scope gating", async () => {
   assertEquals((await get("/api/otter/items", legacy.token)).status, 409);
   // Owner is unrestricted -> passes the gate -> 409 no jar (NOT 403).
   assertEquals((await get("/api/otter/items", OWNER)).status, 409);
+});
+
+// --- #144: in-process confinement money shot for the liked-videos chokepoint. The security
+// property the issue pins is the CROSS-DENIAL between youtube:liked and youtube:history: a
+// history token is DENIED at /api/youtube/liked (403 before the jar is touched), and a liked
+// token is DENIED at /api/youtube/feed. A liked token PASSES the scope gate at /liked (not
+// 403 — it stops at 409 step-up/no-jar, exactly like the otter gating test above). The
+// owner-unrestricted property is covered by the otter tests; this test pins only the new
+// chokepoint, so it does not depend on the handler's singleton ownerSecret.
+Deno.test("handler GET /api/youtube/liked — read-scope gating (#144)", async () => {
+  const ctx = { env: { OWNER_SECRET: "unused-here" }, dataDir: "" }; // in-memory: no scheduler, no SEAL_KEY
+  const likedTok = await mint("youtube", "owner", "ytliked", ["youtube:liked"]);
+  const historyTok = await mint("youtube", "owner", "ythistory", ["youtube:history"]);
+
+  const get = (path: string, bearer: string) =>
+    handler(
+      new Request(`http://localhost${path}`, { headers: { Authorization: `Bearer ${bearer}` } }),
+      ctx,
+    );
+
+  // The cross-denial: a history-only token is DENIED at /liked (403, naming "liked").
+  const dLiked = await get("/api/youtube/liked", historyTok.token);
+  assertEquals(dLiked.status, 403);
+  assert((await dLiked.text()).includes("not liked"), "scope error names the excluded read");
+
+  // ...and a liked-only token is DENIED at /feed (403, naming "feed").
+  const dFeed = await get("/api/youtube/feed", likedTok.token);
+  assertEquals(dFeed.status, 403);
+  assert((await dFeed.text()).includes("not feed"), "scope error names the excluded read");
+
+  // A liked token PASSES the scope gate at /liked (NOT 403): it reaches step-up/no-jar. This
+  // is the exact idiom the otter live-gating test below uses — robust to first-use state.
+  assert((await get("/api/youtube/liked", likedTok.token)).status !== 403,
+    "liked token is not scope-denied at /liked (passes the gate)");
 });
 
 // --- /api/scopes: the enforced-ingredient ledger is what the UX layer must render (#73).
@@ -149,11 +214,11 @@ Deno.test("handler GET /api/scopes(+/:id) — public, exact enforced label", asy
 Deno.test("pluginCapabilities: a CAN/CANNOT statement for every registered plugin", () => {
   const all = pluginCapabilities();
   // The invariant is coverage of the live registry — in-tree code plugins AND declarative
-  // sites (server/plugins/sites/*.json), which contribute a statement the same way. The 7
+  // sites (server/plugins/sites/*.json), which contribute a statement the same way. The 9
   // in-tree plugins are a mandatory subset; declarative sites extend it without a code edit.
   const have = new Set(all.map((p) => p.plugin));
   for (const id of allPlugins().map((p) => p.id)) assert(have.has(id), `${id} has a capability statement`);
-  for (const id of ["amazon", "google-calendar", "nytimes", "otter", "reddit", "twitter", "youtube"]) {
+  for (const id of ["amazon", "codex", "google-calendar", "nytimes", "otter", "reddit", "twitter", "youtube", "zai"]) {
     assert(have.has(id), `in-tree ${id} has a statement`);
   }
   for (const p of all) {
@@ -198,7 +263,7 @@ Deno.test("handler GET /api/scopes — ledger also surfaces the plugin statement
 // utilities cover the issue's seed list, and >=3 consume a real enforced scope (acceptance).
 Deno.test("appDeclarations: every consumed id resolves to an enforced ingredient", () => {
   const apps = appDeclarations();
-  assertEquals(apps.map((a) => a.id).sort(), ["calendar-share", "feedling", "otterpilot", "reddit-karma"]);
+  assertEquals(apps.map((a) => a.id).sort(), ["calendar-share", "feedling", "otterpilot", "reddit-karma", "zai-usage"]);
   for (const a of apps) {
     for (const c of a.consumedScopes) {
       assert(c.enforced, `${a.id} consumes ${c.id} which must be enforced (not hollow)`);

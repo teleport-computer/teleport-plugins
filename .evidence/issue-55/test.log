@@ -1,0 +1,315 @@
+[0m[32mCheck[0m server/audit_test.ts
+[0m[32mCheck[0m server/boot_deny_env_test.ts
+[0m[32mCheck[0m server/declarative_test.ts
+[0m[32mCheck[0m server/handler_test.ts
+[0m[32mCheck[0m server/locator_test.ts
+[0m[32mCheck[0m server/plugins/amazon_test.ts
+[0m[32mCheck[0m server/plugins/google-calendar_test.ts
+[0m[32mCheck[0m server/plugins/nytimes_test.ts
+[0m[32mCheck[0m server/plugins/reddit_test.ts
+[0m[32mCheck[0m server/plugins/youtube_test.ts
+[0m[32mCheck[0m server/plugins/zai_test.ts
+[0m[32mCheck[0m server/promoter_test.ts
+[0m[32mCheck[0m server/scopes_test.ts
+[0m[32mCheck[0m server/stepup_test.ts
+[0m[32mCheck[0m server/tokens_test.ts
+[0m[32mCheck[0m server/top_level_env_test.ts
+[0m[32mCheck[0m server/ucan_test.ts
+[0m[32mCheck[0m server/vault_test.ts
+[0m[38;5;245mrunning 6 tests from ./server/audit_test.ts[0m
+retention: drops entries older than the age window at boot ... [0m[32mok[0m [0m[38;5;245m(6ms)[0m
+retention: caps to the newest N when a source runs away ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+audit(): every write keeps the store within policy (no cron) ... [0m[32mok[0m [0m[38;5;245m(2ms)[0m
+pruneAudit: reports before/after bytes + is idempotent on a bounded store ... [0m[32mok[0m [0m[38;5;245m(391µs)[0m
+pruneAudit: persists the prune to disk (boot reduction is durable) ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+applyRetention: on an empty store is a safe no-op ... [0m[32mok[0m [0m[38;5;245m(851µs)[0m
+[0m[38;5;245mrunning 2 tests from ./server/boot_deny_env_test.ts[0m
+#49: no static import of npm:rettiwt-api in server/ (would crash the --deny-env boot) ... [0m[32mok[0m [0m[38;5;245m(16ms)[0m
+#49: handler graph boots under --deny-env (live repro; needs --allow-run) ...
+[0m[38;5;245m------- post-test output -------[0m
+skip live boot probe — re-run with --allow-run to exercise the --deny-env boot
+[0m[38;5;245m----- post-test output end -----[0m
+#49: handler graph boots under --deny-env (live repro; needs --allow-run) ... [0m[32mok[0m [0m[38;5;245m(505µs)[0m
+[0m[38;5;245mrunning 2 tests from ./server/declarative_test.ts[0m
+registerSite: manifest becomes a live plugin + a gate-enforced scope ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+validateManifest: rejects jar-exfiltration and malformed manifests ... [0m[32mok[0m [0m[38;5;245m(939µs)[0m
+[0m[38;5;245m------- post-test output -------[0m
+All handler tests passed.
+[0m[38;5;245m----- post-test output end -----[0m
+[0m[38;5;245mrunning 17 tests from ./server/handler_test.ts[0m
+handler: health check ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+handler: health check ... [0m[32mok[0m [0m[38;5;245m(10ms)[0m
+handler: POST /api/connect refuses unlisted app (AC1) ... [0m[32mok[0m [0m[38;5;245m(554µs)[0m
+handler: POST /api/connect allows listed app (AC1) ... [0m[32mok[0m [0m[38;5;245m(493µs)[0m
+handler: POST /api/connect scope overflow → dev-mode (AC3) ... [0m[32mok[0m [0m[38;5;245m(208µs)[0m
+handler: POST /api/connect unknown plugin → 404 ... [0m[32mok[0m [0m[38;5;245m(207µs)[0m
+handler: GET /api/listing returns catalog ... [0m[32mok[0m [0m[38;5;245m(190µs)[0m
+handler: GET /api/listing entries have required fields ... [0m[32mok[0m [0m[38;5;245m(166µs)[0m
+handler: POST /api/connect app not allowed for plugin → refuse ... [0m[32mok[0m [0m[38;5;245m(188µs)[0m
+handler: audit log records connect.refuse (AC5) ... [0m[32mok[0m [0m[38;5;245m(429µs)[0m
+handler: tighten revokes broad token and re-mints enforced ingredient ... [0m[32mok[0m [0m[38;5;245m(634µs)[0m
+handler returns 404 for unknown routes ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+handler returns signedIn:false for /api/me without auth ... [0m[32mok[0m [0m[38;5;245m(171µs)[0m
+handler: GET /api/:plugin/items returns list under `items` AND `data` (alias) — #95 ... [0m[32mok[0m [0m[38;5;245m(841µs)[0m
+handler: GET /api/:plugin/items/:id returns single item under `data` (no `items`) — #95 ... [0m[32mok[0m [0m[38;5;245m(206µs)[0m
+handler: #131 subjectless token is rejected, not silently owner ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+handler: POST /api/audit/prune is owner-only ... [0m[32mok[0m [0m[38;5;245m(254µs)[0m
+app page: SDK connect contract, no provider branch (#55) ... [0m[32mok[0m [0m[38;5;245m(314µs)[0m
+[0m[38;5;245m------- post-test output -------[0m
+All locator tests passed.
+[0m[38;5;245m----- post-test output end -----[0m
+[0m[38;5;245mrunning 4 tests from ./server/locator_test.ts[0m
+locator #154: migration — origin tombstone, destination home=self, valid signatures ...
+[0m[38;5;245m------- post-test output -------[0m
+
+PODS (did:key):
+  origin       did:key:z6MkmjbmxbMcYqg6dE2oouYfghHPHqCehqAy5wtippuSHtoN
+  destination  did:key:z6Mkk9Q9w4zWtmH5H3qLibgiAY9UPjXdrC96BVoeBK2EhTPA
+
+MIGRATION:
+  destination home   seq=1 home=https://dest.pod
+  origin tombstone   seq=2 movedTo=https://dest.pod
+  AC1  origin locator = MOVED → https://dest.pod ✓
+  AC2  destination locator = HOME → https://dest.pod (=self) ✓
+  AC1/AC2 signatures verify against each record's iss (pod did:key) ✓
+  REJECT  tampered movedTo fails signature check ✓
+[0m[38;5;245m----- post-test output end -----[0m
+locator #154: migration — origin tombstone, destination home=self, valid signatures ... [0m[32mok[0m [0m[38;5;245m(6ms)[0m
+locator #154: stale read on origin → 410 + tombstone (the HTTP decision) ...
+[0m[38;5;245m------- post-test output -------[0m
+
+AC3  stale read on origin: 410 + tombstone body ✓
+[0m[38;5;245m----- post-test output end -----[0m
+locator #154: stale read on origin → 410 + tombstone (the HTTP decision) ... [0m[32mok[0m [0m[38;5;245m(187µs)[0m
+locator #154: helper resolves origin→destination in ONE hop, refuses two + loop ...
+[0m[38;5;245m------- post-test output -------[0m
+
+AC4  followLocator(origin): origin moved → dest home in 1 hop ✓
+  visited: https://origin.pod → https://dest.pod  (hops=1)
+  REJECT  second hop (dest moved again) ✓
+  REJECT  loop (movedTo == origin) ✓
+  REJECT  404 dead end ✓
+[0m[38;5;245m----- post-test output end -----[0m
+locator #154: helper resolves origin→destination in ONE hop, refuses two + loop ... [0m[32mok[0m [0m[38;5;245m(6ms)[0m
+locator #154: HTTP route — 200 home / 410 tombstone / 404 unknown / owner-gated PUT ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+
+HTTP route (in-process handler): PUT owner-gated (401 w/o secret) · 200 home · 410 tombstone · 404 unknown — all signatures verify ✓
+[0m[38;5;245m----- post-test output end -----[0m
+locator #154: HTTP route — 200 home / 410 tombstone / 404 unknown / owner-gated PUT ... [0m[32mok[0m [0m[38;5;245m(5ms)[0m
+[0m[38;5;245mrunning 55 tests from ./server/plugins/amazon_test.ts[0m
+amazon cart: parseCart extracts line items with title/price/qty ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+amazon cart: parseCart cleans cart-item titles at the source (entities, trailing 'Opens in a new tab', whitespace) ... [0m[32mok[0m [0m[38;5;245m(170µs)[0m
+amazon cart: parseCart skips sc-list-item rows without data-asin ... [0m[32mok[0m [0m[38;5;245m(57µs)[0m
+amazon cart: parseCart returns [] for an empty-cart page ... [0m[32mok[0m [0m[38;5;245m(35µs)[0m
+amazon cart: loggedIn keys on at-main ... [0m[32mok[0m [0m[38;5;245m(62µs)[0m
+amazon cart: isCaptcha detects robot check (url + body markers) ... [0m[32mok[0m [0m[38;5;245m(138µs)[0m
+amazon cart: isEmptyCart detects a genuine empty cart ... [0m[32mok[0m [0m[38;5;245m(108µs)[0m
+amazon cart: registered with the right cookie domain + render url ... [0m[32mok[0m [0m[38;5;245m(84µs)[0m
+amazon cart: amazon:cart-read ingredient + capability registered ... [0m[32mok[0m [0m[38;5;245m(136µs)[0m
+amazon cart: start mock server ... [0m[32mok[0m [0m[38;5;245m(7ms)[0m
+amazon cart: listItems returns real cart line items ... [0m[32mok[0m [0m[38;5;245m(5ms)[0m
+amazon cart: fetchItem returns the full line for an ASIN ... [0m[32mok[0m [0m[38;5;245m(700µs)[0m
+amazon cart: fetchItem throws for an ASIN not in the cart ... [0m[32mok[0m [0m[38;5;245m(901µs)[0m
+amazon cart: captcha throws a clear robot-check error (not empty success) ... [0m[32mok[0m [0m[38;5;245m(680µs)[0m
+amazon cart: 403 throws a clear expired-jar error ... [0m[32mok[0m [0m[38;5;245m(578µs)[0m
+amazon cart: genuine empty cart returns [] (not an error) ... [0m[32mok[0m [0m[38;5;245m(456µs)[0m
+amazon cart: unparseable 200 page throws (never masks as empty success) ... [0m[32mok[0m [0m[38;5;245m(406µs)[0m
+amazon cart: stop mock server ... [0m[32mok[0m [0m[38;5;245m(317µs)[0m
+amazon substitute: normalizeSubstitute accepts a valid one-for-one swap ... [0m[32mok[0m [0m[38;5;245m(139µs)[0m
+amazon substitute: missing removeAsin is rejected as arbitrary add ... [0m[32mok[0m [0m[38;5;245m(346µs)[0m
+amazon substitute: missing addAsin is rejected ... [0m[32mok[0m [0m[38;5;245m(86µs)[0m
+amazon substitute: quantity-bomb is rejected ... [0m[32mok[0m [0m[38;5;245m(73µs)[0m
+amazon substitute: non-positive / non-integer qty is rejected ... [0m[32mok[0m [0m[38;5;245m(107µs)[0m
+amazon substitute: invalid / identical ASINs are rejected ... [0m[32mok[0m [0m[38;5;245m(143µs)[0m
+amazon substitute: parsePrice handles $ / plain / unparseable ... [0m[32mok[0m [0m[38;5;245m(132µs)[0m
+amazon substitute: priceBandOk allows a comparable replacement, bounds a jump ... [0m[32mok[0m [0m[38;5;245m(68µs)[0m
+amazon substitute: categorize + sameCategory keep swaps within a category ... [0m[32mok[0m [0m[38;5;245m(488µs)[0m
+amazon substitute: parseCartUpdateForm scrapes the action + CSRF token ... [0m[32mok[0m [0m[38;5;245m(215µs)[0m
+amazon substitute: parseCartUpdateForm returns null when no active-cart form ... [0m[32mok[0m [0m[38;5;245m(47µs)[0m
+amazon substitute: cartQtyFieldName finds the quantity field for an ASIN's row ... [0m[32mok[0m [0m[38;5;245m(160µs)[0m
+amazon substitute: amazon:cart-substitute is a registered ingredient with no reads ... [0m[32mok[0m [0m[38;5;245m(99µs)[0m
+amazon substitute: a substitute-only token is confined to NO reads (empty set) ... [0m[32mok[0m [0m[38;5;245m(99µs)[0m
+amazon substitute: capability statement mentions the substitute write ... [0m[32mok[0m [0m[38;5;245m(73µs)[0m
+amazon substitute: plugin exposes the substitute write ... [0m[32mok[0m [0m[38;5;245m(29µs)[0m
+amazon substitute handler: owner substitute → 200 (stubbed write) ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+amazon substitute handler: owner substitute → 200 (stubbed write) ... [0m[32mok[0m [0m[38;5;245m(4ms)[0m
+amazon substitute handler: cart-substitute token → 200 (stubbed write) ... [0m[32mok[0m [0m[38;5;245m(455µs)[0m
+amazon substitute handler: read-only (no-cap) token → 401 ... [0m[32mok[0m [0m[38;5;245m(200µs)[0m
+amazon substitute handler: token with an unrelated cap → 401 ... [0m[32mok[0m [0m[38;5;245m(155µs)[0m
+amazon substitute handler: arbitrary add (no removeAsin) → 403 via the real gate ... [0m[32mok[0m [0m[38;5;245m(2ms)[0m
+amazon substitute handler: quantity-bomb → 403 via the real gate ... [0m[32mok[0m [0m[38;5;245m(451µs)[0m
+amazon substitute handler: a scoped denial from the write → 403 ... [0m[32mok[0m [0m[38;5;245m(446µs)[0m
+amazon substitute handler: a transport error from the write → 502 ... [0m[32mok[0m [0m[38;5;245m(429µs)[0m
+amazon substitute handler: a substitute-only token CANNOT read the cart → 403 ... [0m[32mok[0m [0m[38;5;245m(308µs)[0m
+amazon substitute handler: no checkout endpoint exists for the cap (denied) ... [0m[32mok[0m [0m[38;5;245m(2ms)[0m
+amazon reify: reduces a captured trace to cart.add + cart.remove + cart.update ... [0m[32mok[0m [0m[38;5;245m(720µs)[0m
+amazon reify: action filter isolates one op kind ... [0m[32mok[0m [0m[38;5;245m(162µs)[0m
+amazon reify: accepts the camelCase bridge schema too (requestBody/requestHeaders) ... [0m[32mok[0m [0m[38;5;245m(76µs)[0m
+amazon reify: a CSRF carried ONLY in the anti-csrftoken-a2z header is still captured ... [0m[32mok[0m [0m[38;5;245m(90µs)[0m
+amazon reify: an empty / non-cart trace reifies to [] (never throws) ... [0m[32mok[0m [0m[38;5;245m(50µs)[0m
+amazon substitute: parseAsinOffer scrapes the DP title + price (pure) ... [0m[32mok[0m [0m[38;5;245m(632µs)[0m
+amazon substitute: raw server-side replay is DEMOTED — throws browser-path with no SPI ... [0m[32mok[0m [0m[38;5;245m(177µs)[0m
+amazon browser substitute: start SPI mock ... [0m[32mok[0m [0m[38;5;245m(189µs)[0m
+amazon browser substitute: drives the SPI, reifies the add+remove ops ... [0m[32mok[0m [0m[38;5;245m(3ms)[0m
+amazon browser substitute: server-side gate denies a cross-category swap BEFORE actuation ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+amazon browser substitute: stop SPI mock ... [0m[32mok[0m [0m[38;5;245m(219µs)[0m
+[0m[38;5;245mrunning 4 tests from ./server/plugins/google-calendar_test.ts[0m
+google calendar uses Calendar v3 and maps upcoming events ... [0m[32mok[0m [0m[38;5;245m(17ms)[0m
+google calendar edits one event with a Calendar PATCH ... [0m[32mok[0m [0m[38;5;245m(538µs)[0m
+google calendar consent requests offline calendar scope ... [0m[32mok[0m [0m[38;5;245m(255µs)[0m
+google calendar exchange requires and returns a refresh token ... [0m[32mok[0m [0m[38;5;245m(229µs)[0m
+[0m[38;5;245mrunning 2 tests from ./server/plugins/nytimes_test.ts[0m
+nytimes #12: /api/plugins marks browser-path + unavailable ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+nytimes #12: /api/plugins marks browser-path + unavailable ... [0m[32mok[0m [0m[38;5;245m(10ms)[0m
+nytimes #12: every other plugin entry keeps its current shape ... [0m[32mok[0m [0m[38;5;245m(426µs)[0m
+[0m[38;5;245mrunning 14 tests from ./server/plugins/reddit_test.ts[0m
+reddit karma: start mock server ... [0m[32mok[0m [0m[38;5;245m(8ms)[0m
+reddit karma: loggedIn keys on reddit_session ... [0m[32mok[0m [0m[38;5;245m(295µs)[0m
+reddit karma: account() returns identity + karma breakdown ... [0m[32mok[0m [0m[38;5;245m(5ms)[0m
+reddit karma: total_karma derived when Reddit omits it ... [0m[32mok[0m [0m[38;5;245m(711µs)[0m
+reddit karma: saved-posts listItems still works (regression) ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+reddit karma: route returns karma for owner ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+reddit karma: route returns karma for owner ... [0m[32mok[0m [0m[38;5;245m(7ms)[0m
+reddit karma: route 401 without auth ... [0m[32mok[0m [0m[38;5;245m(645µs)[0m
+reddit karma: 404 for a plugin with no account view ... [0m[32mok[0m [0m[38;5;245m(433µs)[0m
+reddit karma: scope-confined token is denied account ... [0m[32mok[0m [0m[38;5;245m(374µs)[0m
+reddit karma: reddit:karma-scoped token reads account ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+reddit karma: reddit:karma-scoped token CANNOT read saved posts ... [0m[32mok[0m [0m[38;5;245m(389µs)[0m
+reddit karma: /api/plugins advertises account support ... [0m[32mok[0m [0m[38;5;245m(353µs)[0m
+reddit karma: /api/scopes lists reddit:karma ingredient ... [0m[32mok[0m [0m[38;5;245m(342µs)[0m
+reddit karma: stop mock server ... [0m[32mok[0m [0m[38;5;245m(234µs)[0m
+[0m[38;5;245mrunning 7 tests from ./server/plugins/youtube_test.ts[0m
+parseLikedItem: id + title + channel + length from a playlistVideoRenderer ... [0m[32mok[0m [0m[38;5;245m(632µs)[0m
+parseLikedItem: null when no videoId (continuation/telemetry entries) ... [0m[32mok[0m [0m[38;5;245m(62µs)[0m
+parseLikedItem: falls back to accessibility label when title.runs is absent ... [0m[32mok[0m [0m[38;5;245m(94µs)[0m
+parseLikedPage: items + continuation token from the first-page shape ... [0m[32mok[0m [0m[38;5;245m(188µs)[0m
+parseLikedContinuation: appendContinuationItemsAction items + token ... [0m[32mok[0m [0m[38;5;245m(99µs)[0m
+parseLikedContinuation: no actions -> empty, no token ... [0m[32mok[0m [0m[38;5;245m(63µs)[0m
+parseLikedPage: empty/missing contents -> empty, no token (never throws) ... [0m[32mok[0m [0m[38;5;245m(58µs)[0m
+[0m[38;5;245mrunning 12 tests from ./server/plugins/zai_test.ts[0m
+zai usage: start mock server ... [0m[32mok[0m [0m[38;5;245m(9ms)[0m
+zai usage: loggedIn keys on zai_token ... [0m[32mok[0m [0m[38;5;245m(259µs)[0m
+zai usage: quota() composes the app contract shape ... [0m[32mok[0m [0m[38;5;245m(6ms)[0m
+zai usage: HTTP-200-with-success:false surfaces as an honest error (not fake data) ... [0m[32mok[0m [0m[38;5;245m(708µs)[0m
+zai usage: listItems/fetchItem throw (quota-only plugin) ... [0m[32mok[0m [0m[38;5;245m(441µs)[0m
+zai usage: route returns quota for owner ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+zai usage: route returns quota for owner ... [0m[32mok[0m [0m[38;5;245m(7ms)[0m
+zai usage: route 401 without auth ... [0m[32mok[0m [0m[38;5;245m(298µs)[0m
+zai usage: 404 for a plugin with no quota view ... [0m[32mok[0m [0m[38;5;245m(151µs)[0m
+zai usage: scope-confined token is denied quota ... [0m[32mok[0m [0m[38;5;245m(351µs)[0m
+zai usage: zai:usage-read-scoped token reads quota ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+zai usage: /api/scopes lists zai:usage-read ingredient ... [0m[32mok[0m [0m[38;5;245m(431µs)[0m
+zai usage: stop mock server ... [0m[32mok[0m [0m[38;5;245m(202µs)[0m
+[0m[38;5;245mrunning 5 tests from ./server/promoter_test.ts[0m
+promote: otterpilot live+frame cluster proposes otter:live-follow's reads ... [0m[32mok[0m [0m[38;5;245m(14ms)[0m
+promote: a single-read cluster (timeline-peek -> twitter:feed) ... [0m[32mok[0m [0m[38;5;245m(176µs)[0m
+promote: denied reads shape the universe but are NOT observed ... [0m[32mok[0m [0m[38;5;245m(138µs)[0m
+promote: empty / non-gate corpus yields no proposals ... [0m[32mok[0m [0m[38;5;245m(64µs)[0m
+promote: multiple apps on one plugin cluster independently ... [0m[32mok[0m [0m[38;5;245m(116µs)[0m
+[0m[38;5;245mrunning 24 tests from ./server/scopes_test.ts[0m
+scopeReads: no scope cap is unrestricted (null) ... [0m[32mok[0m [0m[38;5;245m(548µs)[0m
+scopeReads: otter:live-follow confines to live+frame ... [0m[32mok[0m [0m[38;5;245m(96µs)[0m
+scopeReads: union + non-ingredient caps ignored ... [0m[32mok[0m [0m[38;5;245m(168µs)[0m
+scopeReads: youtube:history confines to feed ... [0m[32mok[0m [0m[38;5;245m(102µs)[0m
+scopeReads: calendar:free-busy confines to items ... [0m[32mok[0m [0m[38;5;245m(156µs)[0m
+scopeReads: youtube:liked confines to liked (excludes feed) ... [0m[32mok[0m [0m[38;5;245m(63µs)[0m
+scopeReads: youtube:history excludes liked (the cross-denial) ... [0m[32mok[0m [0m[38;5;245m(41µs)[0m
+scopeIngredient: youtube:liked is in the enforced ledger with reads=[liked] ... [0m[32mok[0m [0m[38;5;245m(109µs)[0m
+scopeIngredient: youtube:history + calendar:free-busy are in the enforced ledger ... [0m[32mok[0m [0m[38;5;245m(71µs)[0m
+scopeLabel: surfaces the human dial only for ingredients ... [0m[32mok[0m [0m[38;5;245m(74µs)[0m
+handler GET /api/otter/items — read-scope gating ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+handler GET /api/otter/items — read-scope gating ... [0m[32mok[0m [0m[38;5;245m(11ms)[0m
+handler GET /api/youtube/liked — read-scope gating (#144) ... [0m[32mok[0m [0m[38;5;245m(615µs)[0m
+scopeIngredients: surfaces the enforced ledger with ids ... [0m[32mok[0m [0m[38;5;245m(126µs)[0m
+scopeIngredient: exact enforced record by id; undefined when unknown ... [0m[32mok[0m [0m[38;5;245m(43µs)[0m
+handler GET /api/scopes(+/:id) — public, exact enforced label ... [0m[32mok[0m [0m[38;5;245m(524µs)[0m
+pluginCapabilities: a CAN/CANNOT statement for every registered plugin ... [0m[32mok[0m [0m[38;5;245m(182µs)[0m
+pluginCapability: exact record by plugin; undefined when unknown ... [0m[32mok[0m [0m[38;5;245m(50µs)[0m
+approvePage: renders the exact ledger statement for the requested plugin ... [0m[32mok[0m [0m[38;5;245m(241µs)[0m
+handler GET /api/scopes — ledger also surfaces the plugin statements ... [0m[32mok[0m [0m[38;5;245m(191µs)[0m
+appDeclarations: every consumed id resolves to an enforced ingredient ... [0m[32mok[0m [0m[38;5;245m(117µs)[0m
+appDeclarations: feedling consumes youtube:history and offers feedling:digest ... [0m[32mok[0m [0m[38;5;245m(113µs)[0m
+handler GET /api/scopes — surfaces the apps composition graph ... [0m[32mok[0m [0m[38;5;245m(169µs)[0m
+handler GET /scopes — renders the composition panel from the ledger ... [0m[32mok[0m [0m[38;5;245m(484µs)[0m
+handler GET /api/otter/{live,frame,feed} — read-scope gating + audit ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+[0m[38;5;245mrunning 5 tests from ./server/stepup_test.ts[0m
+stepup: approving a challenge clears first-use so the next read is approved ... [0m[32mok[0m [0m[38;5;245m(876µs)[0m
+stepup: a denied/absent approval leaves the token challenging ... [0m[32mok[0m [0m[38;5;245m(70µs)[0m
+stepup: approved token survives a restart (persistence round-trip) ... [0m[32mok[0m [0m[38;5;245m(4ms)[0m
+stepup: connect-approved token never re-challenges ... [0m[32mok[0m [0m[38;5;245m(377µs)[0m
+connect approval replaces the live grant for the same subject/plugin/app ... [0m[32mok[0m [0m[38;5;245m(407µs)[0m
+[0m[38;5;245mrunning 6 tests from ./server/tokens_test.ts[0m
+verifyCap: write:event:A accepted for A, rejected for B ... [0m[32mok[0m [0m[38;5;245m(580µs)[0m
+verifyCap: read-only token rejected for writes, still reads ... [0m[32mok[0m [0m[38;5;245m(75µs)[0m
+verifyCap: exact string — no prefix bleed (AB ≠ A) ... [0m[32mok[0m [0m[38;5;245m(68µs)[0m
+verifyCap: revoked token rejected ... [0m[32mok[0m [0m[38;5;245m(80µs)[0m
+handler POST /api/google-calendar/event/:id — cap gating ...
+[0m[38;5;245m------- post-test output -------[0m
+[init] ready — plugins: otter, youtube, reddit, nytimes, twitter, google-calendar, amazon, zai, hackernews
+[0m[38;5;245m----- post-test output end -----[0m
+handler POST /api/google-calendar/event/:id — cap gating ... [0m[32mok[0m [0m[38;5;245m(11ms)[0m
+mint: subjectless token is rejected at mint time ... [0m[32mok[0m [0m[38;5;245m(545µs)[0m
+[0m[38;5;245mrunning 2 tests from ./server/top_level_env_test.ts[0m
+#15: no module-top-level Deno.env read in handler.ts's static graph (crashes the --deny-env container) ...
+[0m[38;5;245m------- post-test output -------[0m
+#15: walked 44 files of handler.ts's boot graph — clean
+[0m[38;5;245m----- post-test output end -----[0m
+#15: no module-top-level Deno.env read in handler.ts's static graph (crashes the --deny-env container) ... [0m[32mok[0m [0m[38;5;245m(156ms)[0m
+#15: guard semantics — flags module-eval reads only, not function bodies / ctx.env ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+[0m[38;5;245mrunning 2 tests from ./server/ucan_test.ts[0m
+TinyCloud did:key UCAN mint → delegate → invoke chain ...
+[0m[38;5;245m------- post-test output -------[0m
+
+PASS mint → delegate → verify; att map and CIDv1 proof validated
+[0m[38;5;245m----- post-test output end -----[0m
+TinyCloud did:key UCAN mint → delegate → invoke chain ... [0m[32mok[0m [0m[38;5;245m(5ms)[0m
+TinyCloud UCAN rejects every specified malformed or widening case ...
+[0m[38;5;245m------- post-test output -------[0m
+PASS bare [] caveat rejected
+PASS non-boundary path escape rejected
+PASS expiry widening rejected
+PASS ability widening rejected
+PASS expiry widening/expired chain rejected
+PASS wrong CID rejected
+PASS issuer fragment stripped before chain comparison
+PASS audience comparison mismatch rejected
+PASS DID-prefix attack rejected by exact comparison
+[0m[38;5;245m----- post-test output end -----[0m
+TinyCloud UCAN rejects every specified malformed or widening case ... [0m[32mok[0m [0m[38;5;245m(8ms)[0m
+[0m[38;5;245mrunning 7 tests from ./server/vault_test.ts[0m
+twitter accountId: derives numeric id from twid (u%3D<n>) ... [0m[32mok[0m [0m[38;5;245m(525µs)[0m
+twitter accountId: throws on a logged-in session with no parseable twid (no guess) ... [0m[32mok[0m [0m[38;5;245m(693µs)[0m
+vault: two twitter accounts under one subject coexist; per-account getJar; omitted → AmbiguousAccountError ... [0m[32mok[0m [0m[38;5;245m(1ms)[0m
+vault: a token minted with account binds to that account's jar ... [0m[32mok[0m [0m[38;5;245m(292µs)[0m
+vault: single jar + account-less resolution behaves exactly as today (back-compat) ... [0m[32mok[0m [0m[38;5;245m(330µs)[0m
+vault: sealed legacy (2-part) vault migrates to 3-part account-qualified keys, no data loss ...
+[0m[38;5;245m------- post-test output -------[0m
+[vault] loaded 4 jars (sealed), migrated 4 → account-qualified
+[0m[38;5;245m----- post-test output end -----[0m
+vault: sealed legacy (2-part) vault migrates to 3-part account-qualified keys, no data loss ... [0m[32mok[0m [0m[38;5;245m(9ms)[0m
+vault #132: strandedJars returns jars whose subject differs from the current wallet, excludes the current subject's own jars ... [0m[32mok[0m [0m[38;5;245m(543µs)[0m
+
+[0m[32mok[0m | 176 passed | 0 failed [0m[38;5;245m(2s)[0m
+
+[0m[32mok[0m | 176 passed | 0 failed [0m[38;5;245m(2s)[0m
+

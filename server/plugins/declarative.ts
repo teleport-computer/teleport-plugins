@@ -9,6 +9,7 @@
 // exactly as real as reddit:karma — never hollow.
 
 import { cookieHeader, Jar, Plugin, PluginAccount, PluginItem } from "./types.ts";
+import { registerRead, unregisterReads } from "../reads.ts";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -25,7 +26,9 @@ export interface SiteManifest {
   label: string;
   cookieDomains: string[];
   loginCookie: string;
-  reads: { items?: Read; account?: Read; item?: Read };
+  // `items` / `account` / `item` land on the Plugin interface; ANY other key becomes a named read
+  // (server/reads.ts). A site with a fourth read shape is a manifest edit, not a core change.
+  reads: { items?: Read; account?: Read; item?: Read } & Record<string, Read | undefined>;
   scopes?: { id: string; reads: string[]; label: string }[];
   capability: string;
 }
@@ -93,6 +96,27 @@ export function siteToPlugin(m: SiteManifest): Plugin {
       return Object.fromEntries(Object.entries(r.json.item).map(([k, path]) => [k, dig(j, path)]));
     },
   };
+  // Re-registering a site (PUT the same manifest, or a reload) must not throw on the duplicate —
+  // registerRead refuses a second (plugin, kind) by design, so drop this site's reads first.
+  unregisterReads(m.id);
+  // Named reads: every declared kind beyond the three the interface carries. Same jar, same
+  // host-pin, same extraction — it just answers at /api/<site>/<kind> through the generic route
+  // instead of needing a member on Plugin. A manifest scope granting it is enforced identically.
+  for (const [kind, r] of Object.entries(m.reads)) {
+    if ((IFACE_KINDS as readonly string[]).includes(kind)) continue;
+    registerRead({
+      plugin: m.id,
+      kind,
+      label: `${m.label}: ${kind}`,
+      run: async (jar) => {
+        const res = await doFetch(m, r!, jar);
+        if (r!.html) return parseHtml(await res.text(), r!.html);
+        const j = await res.json();
+        const rows = r!.json?.path ? dig(j, r!.json.path) : j;
+        return (rows ?? []).map((it: any): PluginItem => ({ id: String(it.id ?? it), title: it.title ?? "" }));
+      },
+    });
+  }
   if (m.reads.account) {
     p.account = async (jar): Promise<PluginAccount> => {
       const r = m.reads.account!;
@@ -119,7 +143,12 @@ export function manifestScopes(m: SiteManifest): {
 // Reject a malformed or unsafe manifest at registration time (not at read time). The
 // host-pin check here means a bad manifest can never be wired up to point the jar at an
 // off-domain host; a scope may only grant reads the manifest actually declares.
-const READ_KINDS = ["items", "account", "item"] as const;
+// The three kinds the generic loader wires onto the Plugin interface itself. Any OTHER kind a
+// manifest declares becomes a NAMED READ (server/reads.ts) served by handler.ts's generic route —
+// so a manifest is no longer capped at three read shapes, and a site that grows a fourth costs a
+// manifest edit rather than an interface member. Until 2026-08-19 this list was the whole
+// vocabulary and `unknown read kind` rejected everything else.
+const IFACE_KINDS = ["items", "account", "item"] as const;
 export function validateManifest(m: SiteManifest): void {
   if (!m || typeof m !== "object") throw new Error("manifest must be an object");
   if (!/^[a-z0-9-]+$/.test(m.id ?? "")) throw new Error("manifest.id must be url-safe [a-z0-9-]");
@@ -130,7 +159,7 @@ export function validateManifest(m: SiteManifest): void {
   if (!/\bCAN\b/.test(m.capability ?? "") || !/\bCANNOT\b/.test(m.capability ?? "")) throw new Error("manifest.capability must say CAN and CANNOT");
   const domains = m.cookieDomains.map((d) => d.replace(/^\./, ""));
   for (const [kind, r] of Object.entries(m.reads)) {
-    if (!(READ_KINDS as readonly string[]).includes(kind)) throw new Error(`unknown read kind ${kind}`);
+    if (!/^[a-z0-9-]+$/.test(kind)) throw new Error(`read kind '${kind}' must be url-safe [a-z0-9-]`);
     if (!r?.url) throw new Error(`read ${kind} needs a url`);
     if (r.auth !== false) {
       const host = hostOf(r.url.replaceAll("{user}", "x").replaceAll("{id}", "x"));

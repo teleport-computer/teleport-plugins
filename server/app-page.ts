@@ -1,6 +1,8 @@
 // The instance serves its own demo app at GET /app?plugin=<id>. Open it in any
-// browser that has the oauth3 extension — no account, no sign-in: the extension is
-// your identity. The page talks to whatever instance served it (derived from its own
+// browser: with the oauth3 extension your browser is your identity (the provider
+// carries the whole flow); without it, the SDK's web handshake renders an approve
+// link for your OAuth3 room and a poll carries the rest (RFC 0008 — extension
+// optional). The page talks to whatever instance served it (derived from its own
 // URL), so it works unchanged on a local node or a real pod under any mount prefix.
 
 import { DESIGN_CSS } from "./design.ts";
@@ -25,6 +27,10 @@ export function appPage(pluginId = "otter"): string {
  .sub b{color:var(--i1-text)}
  .acts{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
  #login[disabled]{opacity:.5;cursor:default}
+ /* web-handshake approve link (RFC 0008): same shape as the primary action, plus a hint */
+ #approve{display:none;margin:14px 0 0;padding:14px;border-left:6px solid var(--ink1);background:var(--wash1)}
+ #approve a{display:inline-block;font:800 14px var(--cond);text-transform:uppercase;letter-spacing:.12em;color:#fff;background:var(--ink1);padding:10px 16px;text-decoration:none;box-shadow:3px 3px 0 var(--rule)}
+ #approve .hint{display:block;margin-top:8px;color:var(--faint);font-size:13px}
  /* read-failed / no-wallet banner: ink2 danger note (wash2 + ink2 spine) */
  .err{background:var(--wash2);color:var(--i2-text);border-left:6px solid var(--ink2);padding:12px 14px;font-size:14px}
  .err code{font-family:var(--mono);font-size:12px}
@@ -34,11 +40,12 @@ export function appPage(pluginId = "otter"): string {
  .row .meta{color:var(--faint);font:12px var(--mono);margin-top:3px;word-break:break-word}
 </style></head><body>
   <h1>${cfg.title}</h1>
-  <p class=sub>No account, no password. Your browser is your identity — just the <b>oauth3 extension</b>. Works in incognito.</p>
+  <p class=sub>No account, no password. With the <b>oauth3 extension</b> your browser is your identity; without it you approve once in your OAuth3 room — the web handshake carries the rest.</p>
   <div class=acts>
     <button id=login class=btn>Log in with my browser</button>
     <span id=token class="pill bad">no token yet</span>
   </div>
+  <div id=approve></div>
   <div id=result></div>
 <script>
 const PLUGIN = ${JSON.stringify(plugin)};
@@ -52,19 +59,59 @@ const $ = (id) => document.getElementById(id);
 const out = $("result");
 
 function showErr(status, body) {
-  const hint = status === 409 ? " — sign into " + DOMAIN + " in this browser, then log in again." : "";
+  const hint = status === 409
+    ? " — your " + DOMAIN + " cookies aren't synced to this instance yet. Sign into " + DOMAIN
+      + " where the oauth3 extension runs (it copies the jar), then retry here."
+    : "";
   out.innerHTML = '<div class=err>read failed (' + status + '): ' + (body && body.error || "unknown") + hint + '</div>';
+}
+
+function showApprove(url) {
+  $("approve").style.display = "block";
+  $("approve").innerHTML = '<a href="' + url + '" target=_blank rel=noopener>Open your OAuth3 room to approve →</a>'
+    + '<span class=hint>no extension needed — approve there; this page continues on its own.</span>';
+}
+function clearApprove() { $("approve").style.display = "none"; $("approve").innerHTML = ""; }
+
+// oauth3-sdk connect() — ported verbatim from oauth3-sdk src/index.ts (the same port
+// otterscope carries, webhost-apps PR #143; feedling-web/oauth3-client.ts hand-drives
+// the same handshake). Provider-preferred: if the extension provider is present it
+// carries the whole flow — copy the jar if needed, approve, hand back a token. Web
+// fallback (no extension — phone, same-pod): POST /api/connect, surface the approveUrl
+// for the user's signed-in room, poll until the token comes back. RFC 0008: the page
+// never touches the injected provider itself — the SDK port decides.
+async function oauth3Connect(opts) {
+  const prov = globalThis.oauth3 ?? globalThis.window?.oauth3;
+  if (prov && typeof prov.connect === "function") {
+    const t = await prov.connect({ node: opts.node, plugin: opts.plugin, subject: opts.subject, app: opts.app });
+    return t;
+  }
+  const cr = await fetch(opts.node + "/api/connect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ plugin: opts.plugin, subject: opts.subject, app: opts.app }) });
+  const cb = await cr.json().catch(() => ({}));
+  if (!cr.ok) throw new Error(cb.error || ("connect " + cr.status));
+  await opts.onApproveUrl?.(cb.approveUrl);
+  const interval = opts.intervalMs ?? 2000, deadline = Date.now() + (opts.timeoutMs ?? 300000);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, interval));
+    const s = await (await fetch(opts.node + "/api/connect/" + cb.requestId)).json().catch(() => ({}));
+    if (s.status === "approved") return s.token;
+    if (s.status === "denied") throw new Error("connect denied by user");
+  }
+  throw new Error("connect timed out");
 }
 
 $("login").addEventListener("click", async () => {
   out.innerHTML = "";
-  if (!window.oauth3) {
-    out.innerHTML = '<div class=err>No oauth3 wallet found. Install the <code>oauth3-extension</code> and reload.</div>';
-    return;
-  }
+  clearApprove();
   $("login").disabled = true;
   try {
-    const token = await window.oauth3.connect({ plugin: PLUGIN, app: PLUGIN + "-demo", node: NODE });
+    const token = await oauth3Connect({
+      // "demo-app" is the instance demo's entry in the listing gate (server/listing.ts) —
+      // an unlisted id is refused by POST /api/connect before any approval can happen.
+      node: NODE, plugin: PLUGIN, app: "demo-app",
+      onApproveUrl: (url) => showApprove(url),
+    });
+    clearApprove();
     $("token").className = "pill ok"; $("token").textContent = "scoped token ✓";
 
     const r = await fetch(NODE + "/api/" + PLUGIN + "/items", { headers: { Authorization: "Bearer " + token } });

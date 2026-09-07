@@ -9,7 +9,7 @@
 
 import { Jar } from "./plugins/types.ts";
 
-interface Entry { jar: Jar; updatedAt: number; }
+interface Entry { jar: Jar; updatedAt: number; status?: "migrating"; }
 
 // Thrown when a caller asks for a jar by (subject, plugin) alone but that identity holds
 // more than one account for that plugin. Never silently pick one — surface it to the
@@ -166,6 +166,85 @@ export function allJars(): { subject: string; plugin: string; account: string; j
     const { subject, plugin, account } = parseKey(k);
     return { subject, plugin, account, jar: e.jar };
   });
+}
+
+// #170 — the owner-readable directory over the SAME store allJars() walks: every
+// (subject, plugin, account) with jarStatus()'s fields (updatedAt, count). Deliberately
+// excludes the jar itself — this is a directory of current ownership, not a read. Consumers
+// must use this instead of mining /api/audit: the audit ring buffer is bounded (#120) and
+// evicts old `cookies.sync` entries while the jar is still perfectly fine.
+export function allJarStatuses(): { subject: string; plugin: string; account: string; updatedAt: number; count: number }[] {
+  return Object.entries(store)
+    .map(([k, e]) => {
+      const { subject, plugin, account } = parseKey(k);
+      return { subject, plugin, account, updatedAt: e.updatedAt, count: Object.keys(e.jar).length };
+    })
+    .sort((a, b) =>
+      a.subject.localeCompare(b.subject) || a.plugin.localeCompare(b.plugin) || a.account.localeCompare(b.account)
+    );
+}
+
+export interface ExportedVaultEntry {
+  plugin: string;
+  account: string;
+  jar: Jar;
+  updatedAt: number;
+  status?: "migrating";
+}
+
+// Export is intentionally a snapshot: callers receive the plaintext only in memory, then
+// mark these same rows migrating after the encrypted envelope has been built successfully.
+export function entriesForExport(subject: string): ExportedVaultEntry[] {
+  return Object.entries(store)
+    .filter(([k]) => parseKey(k).subject === subject)
+    .map(([k, e]) => {
+      const p = parseKey(k);
+      return { plugin: p.plugin, account: p.account, jar: e.jar, updatedAt: e.updatedAt, ...(e.status ? { status: e.status } : {}) };
+    })
+    .sort((a, b) => a.plugin.localeCompare(b.plugin) || a.account.localeCompare(b.account));
+}
+
+export async function markMigrating(subject: string): Promise<number> {
+  let count = 0;
+  for (const [k, e] of Object.entries(store)) {
+    if (parseKey(k).subject === subject) {
+      e.status = "migrating";
+      count++;
+    }
+  }
+  if (count) await persist();
+  return count;
+}
+
+export async function installEntries(subject: string, entries: ExportedVaultEntry[]): Promise<number> {
+  for (const entry of entries) {
+    if (!entry || typeof entry.plugin !== "string" || typeof entry.account !== "string" ||
+      !entry.jar || typeof entry.jar !== "object") throw new Error("malformed vault entry");
+    store[keyOf(subject, entry.plugin, entry.account)] = { jar: entry.jar, updatedAt: entry.updatedAt };
+  }
+  if (entries.length) await persist();
+  return entries.length;
+}
+
+export async function deleteEntries(subject: string): Promise<number> {
+  let count = 0;
+  for (const k of Object.keys(store)) {
+    if (parseKey(k).subject === subject) { delete store[k]; count++; }
+  }
+  if (count) await persist();
+  return count;
+}
+
+export async function deleteMigrating(subject: string): Promise<number> {
+  let count = 0;
+  for (const [k, entry] of Object.entries(store)) {
+    if (parseKey(k).subject === subject && entry.status === "migrating") {
+      delete store[k];
+      count++;
+    }
+  }
+  if (count) await persist();
+  return count;
 }
 
 // #132 — make a stranded jar legible. A jar is "stranded" when it exists under a subject

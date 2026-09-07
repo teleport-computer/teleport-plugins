@@ -27,11 +27,14 @@ Issue: "reddit: add subreddit listing + search read + reddit:read scope"
 - [x] THIS SESSION — tests: sub-restricted search hits the `/r/<sub>/search.json` contract
       (marker child served only when `restrict_sr=1` is on the wire); root search carries NO
       rate-limit headers upstream ⇒ none fabricated downstream; wire-level header pass-through.
-- [ ] `deno check server/main.ts` clean.
-- [ ] `deno test --allow-net --allow-read --allow-write --allow-env` green.
-- [ ] Deploy (local daemon — no staging daemon token exists on this box; #185 precedent) +
+- [x] `deno check server/main.ts` clean.
+- [x] `deno test --allow-net --allow-read --allow-write --allow-env` green (147 at c9e6359;
+      208 at the merge tip 22a3adc — staging's suite included).
+- [x] Deploy (local daemon — no staging daemon token exists on this box; #185 precedent) +
       HTTP transcript: version pin, scopes, capabilities, cross-denials, jar-less 409.
-- [ ] PR body per template; swap `ready`→`in-review` on PR open.
+- [x] PR body per template; swap `ready`→`in-review` on PR open.
+- [x] Post-PR: staging had moved → merged origin/staging in (22a3adc, adjacent-insertion
+      conflicts kept both; no rebase — the push broker cannot force, LESSONS 2026-08-29).
 
 ## Operator-run remainder (not collectable from this box)
 The live "fresh reddit jar ⇒ real posts" leg needs a node whose egress Reddit serves (zed's IP is

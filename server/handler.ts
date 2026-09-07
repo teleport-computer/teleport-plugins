@@ -22,6 +22,8 @@
 //   POST   /api/connect/:requestId/approve|deny  owner_secret — the user's decision
 //   GET    /approve/:requestId                HTML approval screen
 //   GET    /api/:plugin/account              scoped token OR owner — account-level data (identity + karma)
+//   GET    /api/reddit/sub/:name?sort=&limit=&t=  scoped token OR owner — subreddit listing (readKind "sub", reddit:read)
+//   GET    /api/reddit/search?q=&sub=&sort=&limit= scoped token OR owner — reddit search (readKind "search", reddit:read)
 //   GET    /api/:plugin/items[/:id]           scoped token OR owner — read
 //        list (/items)    → {plugin, items:[{id,title,date?,meta?}], data:items}  (prefer `items`; `data` is a back-compat alias)
 //        one   (/items/:id) → {plugin, data:<item>}

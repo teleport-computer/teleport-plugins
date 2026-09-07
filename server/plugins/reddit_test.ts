@@ -40,16 +40,34 @@ const SAVED = {
   },
 };
 
+// A listed post as a subreddit/search listing child. Root /search.json serves it WITHOUT
+// rate-limit headers (the pass-through must not fabricate them); /r/test/search.json serves a
+// marker variant ONLY when restrict_sr=1 is on the wire — root /search has no subreddit param,
+// so a sub-restricted search must prove it took the /r/<sub>/search path.
+const LISTED = {
+  id: "abc", title: "a listed post", score: 42, num_comments: 7, created_utc: 1700000000,
+  permalink: "/r/test/abc", url: "https://example.com/abc", author: "poster", subreddit: "test",
+};
+
 function mockReddit(req: Request): Response {
   const u = new URL(req.url);
   if (u.pathname === "/api/me.json") return Response.json(ME);
-  if (u.pathname === "/r/test/hot.json" || u.pathname === "/search.json") {
-    const item = {
-      id: "abc", title: "a listed post", score: 42, num_comments: 7, created_utc: 1700000000,
-      permalink: "/r/test/abc", url: "https://example.com/abc", author: "poster", subreddit: "test",
-    };
-    return new Response(JSON.stringify({ data: { children: [{ kind: "t3", data: item }] } }), {
+  if (u.pathname === "/r/test/hot.json") {
+    return new Response(JSON.stringify({ data: { children: [{ kind: "t3", data: LISTED }] } }), {
       headers: { "Content-Type": "application/json", "x-ratelimit-used": "3", "x-ratelimit-remaining": "97" },
+    });
+  }
+  if (u.pathname === "/search.json") {
+    return new Response(JSON.stringify({ data: { children: [{ kind: "t3", data: LISTED }] } }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (u.pathname === "/r/test/search.json") {
+    const children = u.searchParams.get("restrict_sr") === "1"
+      ? [{ kind: "t3", data: { ...LISTED, id: "subq", title: "a sub-restricted hit" } }]
+      : [];
+    return new Response(JSON.stringify({ data: { children } }), {
+      headers: { "Content-Type": "application/json", "x-ratelimit-used": "4", "x-ratelimit-remaining": "96" },
     });
   }
   if (u.pathname.startsWith("/user/") && u.pathname.endsWith("/saved.json")) {
@@ -121,6 +139,13 @@ Deno.test("reddit read: listing and search preserve item shape and rate limits",
   assertEquals(listing.rateLimitHeaders, { "x-ratelimit-used": "3", "x-ratelimit-remaining": "97" });
   const search = await redditPlugin.search!({ reddit_session: "x" }, "term", undefined, "relevance", 10);
   assertEquals(search.items.length, 1);
+  assertEquals(search.rateLimitHeaders, {}); // absent upstream ⇒ absent downstream, never fabricated
+});
+
+Deno.test("reddit read: search with sub takes /r/<sub>/search.json and sends restrict_sr", async () => {
+  const subbed = await redditPlugin.search!({ reddit_session: "x" }, "term", "test", "relevance", 10);
+  assertEquals(subbed.items[0].id, "subq"); // marker served only on the sub path with restrict_sr=1
+  assertEquals(subbed.rateLimitHeaders, { "x-ratelimit-used": "4", "x-ratelimit-remaining": "96" });
 });
 
 // --- handler / route tests (in-process; in-memory vault via dataDir: "") ---
@@ -205,7 +230,13 @@ Deno.test("reddit read: reddit:read permits listings but not account/items", asy
   const t = await mint("reddit", "owner", "read-demo", ["reddit:read"]);
   recordTokenUse(t.token, "reddit");
   assertEquals((await call("GET", "/api/reddit/sub/test?sort=hot&limit=25", { bearer: t.token })).status, 200);
-  assertEquals((await call("GET", "/api/reddit/search?q=term", { bearer: t.token })).status, 200);
+  const root = await call("GET", "/api/reddit/search?q=term", { bearer: t.token });
+  assertEquals(root.status, 200);
+  assertEquals(root.headers.get("x-ratelimit-used"), null); // root mock sends none — none fabricated
+  const subbed = await call("GET", "/api/reddit/search?q=term&sub=test", { bearer: t.token });
+  assertEquals(subbed.status, 200);
+  assertEquals((await subbed.json()).items[0].id, "subq");
+  assertEquals(subbed.headers.get("x-ratelimit-used"), "4"); // verbatim pass-through on the wire
   assertEquals((await call("GET", "/api/reddit/account", { bearer: t.token })).status, 403);
   assertEquals((await call("GET", "/api/reddit/items", { bearer: t.token })).status, 403);
 });

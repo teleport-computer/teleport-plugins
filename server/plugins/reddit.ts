@@ -138,9 +138,11 @@ export const redditPlugin: Plugin = {
 
   async search(jar: Jar, query: string, subreddit: string | undefined, sort: string, limit: number): Promise<RedditListingResult> {
     const qs = new URLSearchParams({ q: query, sort, limit: String(limit), raw_json: "1" });
+    // restrict_sr only means anything on /r/<sub>/search — root /search has no subreddit
+    // param, so posting it there would silently return site-wide results.
     if (subreddit) {
       qs.set("restrict_sr", "1");
-      qs.set("subreddit", subreddit);
+      return listing(`/r/${encodeURIComponent(subreddit)}/search.json?${qs}`, jar);
     }
     return listing(`/search.json?${qs}`, jar);
   },

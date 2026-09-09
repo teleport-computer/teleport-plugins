@@ -16,6 +16,13 @@ import { registerRead } from "../reads.ts";
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 const ORIGIN = "https://www.youtube.com";
 
+// Live YouTube base. Override via YOUTUBE_BASE (mock/e2e) through configureYoutube();
+// the watch-page fetch in fetchItem goes through it so tests can point it at 127.0.0.1.
+let BASE = ORIGIN;
+export function configureYoutube(env: Record<string, string>): void {
+  if (env.YOUTUBE_BASE) BASE = env.YOUTUBE_BASE.replace(/\/$/, "");
+}
+
 const item = (id: string, title: string, isShort: boolean): PluginItem => ({ id, title, meta: { isShort } });
 
 // A shorts-shelf entry. Newer builds use shortsLockupViewModel; older use reelItemRenderer.
@@ -82,10 +89,23 @@ export function parseLikedContinuation(body: any): { items: PluginItem[]; cont?:
   return { items: [] };
 }
 
-// SHA-1 -> hex (Web Crypto). Used to build SAPISIDHASH for the InnerTube browse call.
+// SHA-1 -> hex (Web Crypto). Used to build SAPISIDHASH for the InnerTube calls.
 async function sha1hex(s: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// SAPISIDHASH Authorization for InnerTube — the same derived auth liked() uses (#144),
+// which was live-verified from staging egress: unauthenticated player calls from that
+// datacenter IP are bot-walled ("Sign in to confirm you're not a bot", 2026-08-15),
+// jar-authenticated ones are not. Undefined when the jar has no SAPISID — the call then
+// goes unauthenticated (fine from residential/VPN egress) and a bot-walled answer
+// surfaces as the honest playability error.
+async function sapisidAuth(jar: Jar): Promise<string | undefined> {
+  const sapisid = jar["SAPISID"] || jar["__Secure-3PAPISID"];
+  if (!sapisid) return undefined;
+  const ts = Math.floor(Date.now() / 1000);
+  return `SAPISIDHASH ${ts}_${await sha1hex(`${ts} ${sapisid} ${ORIGIN}`)}`;
 }
 
 function parseHistory(data: any): PluginItem[] {
@@ -200,6 +220,19 @@ async function likedVideos(jar: Jar): Promise<PluginItem[]> {
   return out;
 }
 
+// #11: real per-video metadata via the InnerTube player API. The /watch HTML page
+// AND the InnerTube WEB client are both bot-walled from datacenter egress ("Sign in to
+// confirm you're not a bot" — verified live on staging 2026-08-15), so fetchItem rides
+// the MWEB client (mobile-web), which answers structured JSON for any public id from
+// that same egress. Key contract: an id YouTube does not resolve answers with NO usable
+// videoDetails (unavailable / private / bot-walled) — that MUST throw (the items handler
+// maps it to 502), never return a shaped-but-empty object. An UNPLAYABLE video can still
+// carry full videoDetails (embed-gated etc.); presence of title+author is the real
+// "resolved" signal, not playabilityStatus === "OK".
+const INNER_CLIENT = { clientName: "MWEB", clientVersion: "2.20240726.01.00", hl: "en", gl: "US" };
+const INNER_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
+
 export const youtubePlugin: Plugin = {
   id: "youtube",
   label: "YouTube history",
@@ -235,8 +268,47 @@ export const youtubePlugin: Plugin = {
     return parseHistory(data);
   },
 
-  fetchItem(_jar: Jar, id: string): Promise<unknown> {
-    return Promise.resolve({ id, url: `https://www.youtube.com/watch?v=${id}` });
+  // #11: real per-video metadata (see the INNER_CLIENT_VERSION comment above).
+  // #11: real per-video metadata (see the INNER_CLIENT comment above). Sends the
+  // jar-derived SAPISIDHASH when the jar has a SAPISID — the same auth posture as
+  // liked() (#144), live-verified from staging egress: unauthenticated player calls
+  // from that datacenter IP are bot-walled, jar-authenticated ones are not.
+  async fetchItem(jar: Jar, id: string): Promise<unknown> {
+    const auth = await sapisidAuth(jar);
+    const r = await egressFetch(`${BASE}/youtubei/v1/player?prettyPrint=false`, {
+      method: "POST",
+      headers: {
+        "Cookie": cookieHeader(jar),
+        "User-Agent": INNER_UA,
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/json",
+        ...(auth ? { "Authorization": auth } : {}),
+      },
+      body: JSON.stringify({
+        context: { client: INNER_CLIENT },
+        videoId: id,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) throw new Error(`youtube player ${id}: ${r.status}`);
+    const pr = await r.json().catch(() => null) as any;
+    if (!pr) throw new Error(`youtube item ${id}: player response not JSON`);
+    const d = pr?.videoDetails;
+    if (!d?.title || !d?.author) {
+      const reason = pr?.playabilityStatus?.reason || pr?.playabilityStatus?.status || "no videoDetails";
+      throw new Error(`youtube item ${id}: ${reason}`);
+    }
+    return {
+      id,
+      url: `https://www.youtube.com/watch?v=${id}`,
+      title: String(d.title),
+      channel: String(d.author),
+      channelId: d.channelId ? String(d.channelId) : undefined,
+      lengthSeconds: d.lengthSeconds ? String(d.lengthSeconds) : undefined,
+      viewCount: d.viewCount ? String(d.viewCount) : undefined,
+      shortDescription: d.shortDescription ? String(d.shortDescription) : undefined,
+    };
   },
 
 };

@@ -1,0 +1,94 @@
+# Tier 1 transcript — issue #11 — rebased branch, 2026-08-18
+
+Prior run (2026-08-15, pre-rebase tip 6b57609) showed identical behavior; that commit was
+orphaned by the rebase onto staging, so this transcript re-pins everything at 5ab1a5b.
+
+## $ curl -s $B/oauth3/_api/version
+{"service":"oauth3-server","commit":"5ab1a5b"}
+
+## $ curl $B/oauth3/api/youtube/items/ZZZZZZZZZZZ  (bogus id — acceptance criterion 2)
+{"error":"youtube item ZZZZZZZZZZZ: This video is unavailable"}
+# HTTP 502
+
+## $ curl $B/oauth3/api/youtube/items/jNQXAC9IVRw  (real id; jar-authed InnerTube player)
+{"error":"youtube item jNQXAC9IVRw: Sign in to confirm you're not a bot"}
+# HTTP 502  — honest error: the staged jar's SAPISID does not authenticate (session is dead)
+
+## list read (acceptance step 1) after seeding the best available jar:
+$ POST /api/cookies {"plugin":"youtube",<31 distinct cookies from ~/.paseo-secrets/jars/youtube.com.json (snapshot 2026-08-14)>}
+{"ok":true,"plugin":"youtube","account":"default","count":31}
+$ GET /oauth3/api/youtube/items   (scoped token, step-up challenge self-approved)
+{"error":"youtube returned not-logged-in — cookies expired"}
+# HTTP 502
+
+The 2026-08-14 swarm-store snapshot is itself dead — verified from the worker box (not the TEE,
+removing the egress-IP variable) by replaying it at https://www.youtube.com/feed/history:
+ytInitialData.serviceTrackingParams logged_in = 0. Criterion 1's live check needs a logged-in
+jar; none exists on staging or in the swarm store. See BLOCKED in the PR body.
+
+## checks on the rebased tree
+deno check server/main.ts — clean
+deno test --allow-net --allow-read --allow-write --allow-env — 188 passed | 0 failed
+
+## Rebase 2026-08-28 — rebased onto staging dfc02f0; live re-pin PENDING (staging outage)
+
+Staging moved 10 commits past the 08-18 rebase base (d62cc6c → dfc02f0), so the gate verdict
+(CONFLICTING — "rebase it, no new evidence needed") was actioned:
+
+- Rebased cleanly except commit 1: `server/plugins/youtube.ts` (staging's #173 `likedVideos`
+  module-function vs this PR's `extractPlayerResponse` at one insertion point — BOTH kept;
+  `registerRead` intact) and `PLAN.md` (staging's copy belonged to #67/#182 — this PR's plan
+  kept, per the convention the 08-18 rebase set). New tip after evidence re-pin: see `git log -1`.
+- `deno check server/main.ts` clean; `deno test --allow-net --allow-read --allow-write --allow-env`
+  **203 passed | 0 failed** (188 at the 08-18 rebase + 15 from staging's merged commits).
+- Deploy of the rebased tip for the live re-pin BLOCKED: the 2026-08-28 staging outage (see the
+  PR's 2026-08-28 comment — deploy-script/env-redaction incident; `/oauth3/api/health` 500 until
+  the operator restores the live SEAL_KEY). The 2026-08-18 live transcript above names SHAs that
+  the rebase orphaned; it stands as the record of THAT run, not as a current pin.
+- Next tick after the operator restore: redeploy this branch via `deploy.sh`, re-run the
+  criterion-2 read (bogus id → 502 per-id error) + the criterion-1 chain if the jar exists,
+  and re-pin `/_api/version` here.
+
+## Live re-pin — 2026-09-09 (staging restored; criterion 2 re-verified at this PR's commit)
+
+Staging is healthy again: the operator's restore redeployed the core and it serves THIS PR's
+code commit. Both blocked legs of the 08-28 tick are now resolved (restore) or narrowed (jar).
+
+## $ curl -s $B/oauth3/_api/version
+{"service":"oauth3-server","commit":"faa3b90"}
+# faa3b90 is this PR's code commit (tip 3af18bf is this evidence file's note only). The
+# 08-28 "LIVE RE-PIN PENDING" is discharged: the pin no longer names orphaned SHAs.
+
+## $ curl $B/oauth3/api/youtube/items/ZZZZZZZZZZZ  (bogus id — acceptance criterion 2, live at faa3b90)
+{"error":"youtube item ZZZZZZZZZZZ: This video is unavailable"}
+# HTTP 502 — identical shape to the 08-18 run. YouTube answered the bogus id per-id, through
+# the deployed staging instance; fetchItem threw; the handler mapped it to 502.
+
+## $ curl $B/oauth3/api/youtube/items/jNQXAC9IVRw  (real id; no real session — honest error)
+{"error":"youtube item jNQXAC9IVRw: Sign in to confirm you're not a bot"}
+# HTTP 502 — same honest wall answer as the 08-18 run with the dead real jar.
+
+## $ curl $B/oauth3/api/youtube/items  (list read — criterion 1 precondition still absent)
+{"error":"youtube returned not-logged-in — cookies expired"}
+# HTTP 502. Criterion 1 remains undemonstrated: no logged-in .youtube.com jar exists anywhere
+# a worker can reach (see BLOCKED in the PR body).
+
+### How this run authenticated (disclosure)
+The rig subject u-cc7f19ff9b44522c2bf725b7d02d15de could not be used this run: its userKey
+(~/.paseo-secrets/swarm-userkey) is absent from this box — ~/.paseo-secrets does not exist
+here, and no session log on the box ever held the key. So the transcript was produced with a
+freshly self-provisioned subject u-e4e2351c94bb03dfc45e541f406f61fb via the real app flow:
+
+  POST /api/login {userKey:<fresh 64-hex>}                  -> {subject, session}
+  POST /api/cookies {plugin:youtube, cookies:{SAPISID:"rw160-repin-synthetic-not-a-real-session"}}
+  POST /api/connect {plugin:youtube, subject, app:"feedling-web"}   (listed app, youtube:read)
+  POST /api/connect/<id>/approve (Bearer session)            -> approved; token minted
+  GET  /oauth3/api/youtube/items/... (Bearer tok-youtube-…)
+
+The seeded SAPISID value is a SYNTHETIC placeholder whose only purpose is to pass
+plugin.loggedIn()'s SAPISID-presence check so fetchItem executes; it is not a session and
+authenticates nothing (the real-id read above proves that — it hits the same bot wall the
+dead real jar hit on 08-18). The demonstrated behavior — YouTube's per-id answer for the
+bogus id, the throw, the 502 — is fetched live from YouTube via the deployed staging
+instance at faa3b90. Criterion 1, where a real logged-in jar IS the subject, is not claimed
+by this run and remains blocked on the operator's Google login.

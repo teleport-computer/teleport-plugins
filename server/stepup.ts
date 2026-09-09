@@ -65,19 +65,31 @@ function generateId(): string {
   return `chal-${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+// A token minted this recently still carries live consent: the user clicked Connect and
+// approved the grant seconds ago, and this read is that grant being exercised. Re-asking them
+// confirms the same authority to itself. The signal worth catching is the OTHER first use — a
+// token that sat idle and then woke up, where the consent is cold and the read is unattended.
+const FRESH_CONSENT_MS = 2 * 60 * 1000;
+
 // Score the invocation and return a decision.
 // Returns: { decision: "approve" | "reject" | "challenge", signal?: string }
 export function score(
   tokenStr: string, // the full token
   plugin: string,
   item: string,
-  app?: string
+  app?: string,
+  mintedAt?: number // token.createdAt; omitted -> treat consent as cold
 ): { decision: "approve" | "reject" | "challenge"; signal?: string } {
-  // P0: ONE signal — first use of a token
+  // First use of a token is the P0 signal — but only when consent has gone cold. First use is
+  // otherwise true of EVERY token, so challenging on it alone gated 100% of reads rather than
+  // anomalous ones, and (with no wallet prompt shipped) dead-ended every app on its first read.
   const tokenKey = `${plugin}-${tokenStr.slice(0, 16)}`;
   const isFirstUse = !tokenFirstUse.has(tokenKey);
 
   if (isFirstUse) {
+    if (mintedAt !== undefined && Date.now() - mintedAt <= FRESH_CONSENT_MS) {
+      return { decision: "approve" };
+    }
     return { decision: "challenge", signal: "first_token_use" };
   }
 
@@ -120,6 +132,15 @@ export function getChallenge(id: string): Challenge | null {
     audit("stepup.expired", { challengeId: id, plugin: chal.plugin, signal: chal.signal });
   }
   return chal;
+}
+
+// Every still-pending challenge (expiring any that aged out first). The wallet polls this to
+// DISCOVER challenges on its own: if the app handed the wallet the challengeId, the approval
+// would ride the same channel as the request it is meant to confirm, which is the one thing
+// RFC 0005 is trying to avoid. Callers filter to the acting subject.
+export function pendingChallenges(): Challenge[] {
+  for (const id of challenges.keys()) getChallenge(id); // side effect: auto-expire
+  return [...challenges.values()].filter((c) => c.status === "pending");
 }
 
 // Record that a token has been used (called after a successful read, after a step-up

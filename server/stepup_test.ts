@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals } from "jsr:@std/assert";
 import {
   _resetForTest,
   approveChallenge,
@@ -7,7 +7,9 @@ import {
   score,
 } from "./stepup.ts";
 import { approveConnect, createConnect } from "./connect.ts";
-import { listTokens, verify } from "./tokens.ts";
+import { listTokens, mint, verify } from "./tokens.ts";
+import { createSession } from "./sessions.ts";
+import handler from "./handler.ts";
 
 // Each test starts from a clean, in-memory consent ledger so first-use assertions are
 // deterministic and independent of test ordering.
@@ -105,4 +107,46 @@ Deno.test("connect approval replaces the live grant for the same subject/plugin/
   if (!other?.token) throw new Error("different app approval did not mint a token");
   assertEquals(verify(other.token, "reddit") !== null, true);
   assertEquals(verify(approved[2], "reddit") !== null, true);
+});
+
+// Step-up fires on first token use — but first use is true of EVERY token, so on its own it
+// gated 100% of reads and dead-ended every app on its first one. A token minted seconds ago
+// still carries live consent; the signal worth catching is the token that sat idle and woke up.
+Deno.test("stepup: fresh consent passes, cold consent still challenges", () => {
+  _resetForTest();
+  assertEquals(
+    score("tok-zai-freshconsent0001", "zai", "quota", "zai-usage", Date.now()).decision,
+    "approve",
+  );
+  assertEquals(
+    score("tok-zai-coldconsent0002", "zai", "quota", "zai-usage", Date.now() - 10 * 60 * 1000).decision,
+    "challenge",
+  );
+  // an unknown mint time is treated as cold — no silent pass
+  assertEquals(score("tok-zai-nomint0003", "zai", "quota", "zai-usage").decision, "challenge");
+});
+
+// The wallet's inbox. Before this route the only way to answer a challenge was to already know
+// its id — which only the app had — so a challenge raised against the user's token was
+// unanswerable by the user, and every gated read dead-ended at "waiting for approval".
+Deno.test("handler GET /api/challenges/pending — the subject's own challenges, and only those", async () => {
+  _resetForTest();
+  const ctx = { env: { OWNER_SECRET: "test-owner-secret-chal" }, dataDir: "" };
+  const mine = await mint("zai", "u-alice", "zai-usage", ["zai:usage-read"]);
+  const theirs = await mint("zai", "u-bob", "zai-usage", ["zai:usage-read"]);
+  const cMine = createChallenge("zai", "quota", mine.token, "zai-usage", "first_token_use");
+  const cTheirs = createChallenge("zai", "quota", theirs.token, "zai-usage", "first_token_use");
+  const sess = await createSession("u-alice");
+
+  const get = (bearer: string) =>
+    handler(new Request("http://localhost/api/challenges/pending", {
+      headers: { Authorization: `Bearer ${bearer}` },
+    }), ctx);
+
+  assertEquals((await handler(new Request("http://localhost/api/challenges/pending"), ctx)).status, 401);
+
+  const ids = ((await (await get(sess)).json()).challenges as Array<{ challengeId: string }>)
+    .map((c) => c.challengeId);
+  assert(ids.includes(cMine.challengeId), "alice sees the challenge on her own token");
+  assert(!ids.includes(cTheirs.challengeId), "alice must NOT see a challenge on bob's token");
 });

@@ -75,9 +75,14 @@ export async function browserFeed(spiUrl: string, plugin: Plugin, jar: Jar, targ
   await spi(spiUrl, "/navigate", { url: targetUrl }, secret);
   await new Promise((res) => setTimeout(res, 4000));
   // Whose session this is — the SPI's logged-in user, so the app can label the feed.
-  const me = await fetch(`${spiUrl}/twitter/me`, { headers: authHeaders(secret) }).then((r) => r.json()).catch(() => ({}));
+  // The bridge answers /twitter/me with a literal `null` body and HTTP 200 when it has no session
+  // to report. `.json()` therefore SUCCEEDS with null, so the .catch() never fires and reading
+  // .screen_name off it threw "Cannot read properties of null" -- turning a missing display name
+  // into a 502 that killed the whole feed read. The name is decoration; absence must not be fatal.
+  const me = await fetch(`${spiUrl}/twitter/me`, { headers: authHeaders(secret) })
+    .then((r) => r.json()).catch(() => null) ?? {};
   const r = await spi(spiUrl, "/eval", { script: "x" }, secret); // proof bridge returns page innerText
-  return { who: me.screen_name || "", items: parseFeed(r.text || "") };
+  return { who: me?.screen_name ?? "", items: parseFeed(r.text ?? "") };
 }
 
 export async function browserScreenshot(spiUrl: string, plugin: Plugin, jar: Jar, targetUrl: string, secret = "") {

@@ -35,6 +35,10 @@ Issue: "reddit: add subreddit listing + search read + reddit:read scope"
 - [x] PR body per template; swap `ready`→`in-review` on PR open.
 - [x] Post-PR: staging had moved → merged origin/staging in (22a3adc, adjacent-insertion
       conflicts kept both; no rebase — the push broker cannot force, LESSONS 2026-08-29).
+- [x] REWORK (review 2026-09-09) — its one concrete defect: the two new routes were the only
+      `gateRead` chokepoints without #52 `read.outcome` failure audits. Added on no-jar /
+      not-logged-in / error for `sub` and `search`; handler_test gains the reddit leg of the
+      #52 test (209 green; mutation-checked — the test fails on the unpatched handler).
 
 ## Operator-run remainder (not collectable from this box)
 The live "fresh reddit jar ⇒ real posts" leg needs a node whose egress Reddit serves (zed's IP is

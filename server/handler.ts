@@ -1379,8 +1379,8 @@ export default async function handler(req: Request, ctx: HandlerCtx): Promise<Re
     if (!isOwner(req) && !t) return json({ error: "unauthorized" }, 401);
     const denied = await gateRead(t, "reddit", "sub", bearer); if (denied) return denied;
     const subj = jarSubject(t); if (subj instanceof Response) return subj;
-    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) return rj.resp;
-    if (!plugin?.loggedIn(rj.jar)) return json({ error: "not logged in to reddit" }, 409);
+    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) { await auditReadOutcome(t, "reddit", "sub", "no-jar"); return rj.resp; }
+    if (!plugin?.loggedIn(rj.jar)) { await auditReadOutcome(t, "reddit", "sub", "not-logged-in"); return json({ error: "not logged in to reddit" }, 409); }
     const sort = url.searchParams.get("sort") || "hot";
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 25) || 25, 1), 100);
     try {
@@ -1388,7 +1388,7 @@ export default async function handler(req: Request, ctx: HandlerCtx): Promise<Re
       if (t && !isOwner(req)) await recordTokenUse(bearer, "reddit");
       await audit("read", { plugin: "reddit", item: "sub", by: t ? (t.app || t.subject || "token") : "owner" });
       return jsonWithHeaders({ plugin: "reddit", items: result.items, data: result.items }, result.rateLimitHeaders);
-    } catch (e) { return json({ error: (e as Error).message }, 502); }
+    } catch (e) { await auditReadOutcome(t, "reddit", "sub", "error", (e as Error).message); return json({ error: (e as Error).message }, 502); }
   }
 
   if (req.method === "GET" && path === "/api/reddit/search") {
@@ -1398,8 +1398,8 @@ export default async function handler(req: Request, ctx: HandlerCtx): Promise<Re
     if (!isOwner(req) && !t) return json({ error: "unauthorized" }, 401);
     const denied = await gateRead(t, "reddit", "search", bearer); if (denied) return denied;
     const subj = jarSubject(t); if (subj instanceof Response) return subj;
-    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) return rj.resp;
-    if (!plugin?.loggedIn(rj.jar)) return json({ error: "not logged in to reddit" }, 409);
+    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) { await auditReadOutcome(t, "reddit", "search", "no-jar"); return rj.resp; }
+    if (!plugin?.loggedIn(rj.jar)) { await auditReadOutcome(t, "reddit", "search", "not-logged-in"); return json({ error: "not logged in to reddit" }, 409); }
     const query = url.searchParams.get("q") || "";
     if (!query) return json({ error: "q is required" }, 400);
     const sort = url.searchParams.get("sort") || "relevance";
@@ -1409,7 +1409,7 @@ export default async function handler(req: Request, ctx: HandlerCtx): Promise<Re
       if (t && !isOwner(req)) await recordTokenUse(bearer, "reddit");
       await audit("read", { plugin: "reddit", item: "search", by: t ? (t.app || t.subject || "token") : "owner" });
       return jsonWithHeaders({ plugin: "reddit", items: result.items, data: result.items }, result.rateLimitHeaders);
-    } catch (e) { return json({ error: (e as Error).message }, 502); }
+    } catch (e) { await auditReadOutcome(t, "reddit", "search", "error", (e as Error).message); return json({ error: (e as Error).message }, 502); }
   }
 
   // --- google-calendar event-scoped WRITE (RFC: edit-on-behalf, attenuated to one event).

@@ -574,3 +574,81 @@ Deno.test("handler: failed reads leave exactly one read.outcome row (#52)", asyn
     plugin.listItems = origListItems;
   }
 });
+
+// #52 for the #149 reads — same invariant, both reddit chokepoints (sub, search). The plugins
+// are stubbed, so no REDDIT_BASE or network is involved; only the route outcome rows matter.
+Deno.test("handler: reddit sub/search failed reads leave exactly one read.outcome row (#52)", async () => {
+  await callHandler("GET", "/api/health"); // init
+  const count = () => auditLog().length;
+  const rowsSince = (n: number) => auditLog().slice(0, auditLog().length - n);
+  const routes = [
+    { path: "/api/reddit/sub/test?sort=hot&limit=25", readKind: "sub" },
+    { path: "/api/reddit/search?q=term", readKind: "search" },
+  ];
+
+  // no-jar (409) with a reddit:read token — `by` must attribute the app, not the subject.
+  for (const r of routes) {
+    const tok = await mint("reddit", `u-nojar-149-${r.readKind}`, "demo-app", ["reddit:read"]);
+    await recordTokenUse(tok.token, "reddit"); // clear first-use step-up so the read reaches the jar lookup
+    const n = count();
+    const noJar = await callHandler("GET", r.path, undefined, {
+      Authorization: `Bearer ${tok.token}`,
+    });
+    assertEquals(noJar.status, 409);
+    assertEquals((noJar.json as { error: string }).error, "no jar synced for reddit");
+    const rows = rowsSince(n).filter((row) => row.action === "read.outcome");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].detail, { plugin: "reddit", readKind: r.readKind, outcome: "no-jar", by: "demo-app" });
+  }
+
+  const plugin = getPlugin("reddit")!;
+  const origLoggedIn = plugin.loggedIn;
+  const origSubreddit = plugin.subreddit;
+  const origSearch = plugin.search;
+  try {
+    // not-logged-in (409) — jar present, loggedIn false.
+    plugin.loggedIn = () => false;
+    await setJar("owner", "reddit", "default", { reddit_session: "x" });
+    for (const r of routes) {
+      const n = count();
+      const stale = await ownerReq("GET", r.path);
+      assertEquals(stale.status, 409);
+      assertEquals((stale.json as { error: string }).error, "not logged in to reddit");
+      const rows = rowsSince(n).filter((row) => row.action === "read.outcome");
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].detail, { plugin: "reddit", readKind: r.readKind, outcome: "not-logged-in", by: "owner" });
+    }
+
+    // error (502) — the read itself throws; the row carries the message.
+    plugin.loggedIn = () => true;
+    plugin.subreddit = () => Promise.reject(new Error("boom-149-sub"));
+    plugin.search = () => Promise.reject(new Error("boom-149-search"));
+    for (const r of routes) {
+      const n = count();
+      const failed = await ownerReq("GET", r.path);
+      assertEquals(failed.status, 502);
+      assertEquals((failed.json as { error: string }).error, `boom-149-${r.readKind}`);
+      const rows = rowsSince(n).filter((row) => row.action === "read.outcome");
+      assertEquals(rows.length, 1);
+      assertEquals(
+        rows[0].detail,
+        { plugin: "reddit", readKind: r.readKind, outcome: "error", message: `boom-149-${r.readKind}`, by: "owner" },
+      );
+    }
+
+    // ok (200) — NO read.outcome row; the success `read` row carries it instead.
+    plugin.subreddit = () => Promise.resolve({ items: [], rateLimitHeaders: {} });
+    plugin.search = () => Promise.resolve({ items: [], rateLimitHeaders: {} });
+    for (const r of routes) {
+      const n = count();
+      const ok = await ownerReq("GET", r.path);
+      assertEquals(ok.status, 200);
+      assertEquals(rowsSince(n).filter((row) => row.action === "read.outcome").length, 0);
+    }
+  } finally {
+    plugin.loggedIn = origLoggedIn;
+    plugin.subreddit = origSubreddit;
+    plugin.search = origSearch;
+    await deleteJar("owner", "reddit", "default");
+  }
+});

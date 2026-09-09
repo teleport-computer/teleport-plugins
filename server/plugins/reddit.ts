@@ -9,7 +9,7 @@
 // ingredient — identity (username) + karma breakdown. (v1 lists the first page,
 // limit=100; pagination via `after` is a TODO.)
 
-import { cookieHeader, Jar, Plugin, PluginAccount, PluginItem, PluginListOptions } from "./types.ts";
+import { cookieHeader, Jar, Plugin, PluginAccount, PluginItem, PluginListOptions, RedditListingItem, RedditListingResult } from "./types.ts";
 
 // Live Reddit web API base. Override via REDDIT_BASE (e2e/mock) through
 // configureReddit(); never read Deno.env at module top level (the isolated container
@@ -25,10 +25,36 @@ function headers(jar: Jar): Record<string, string> {
 }
 
 async function getJSON(path: string, jar: Jar): Promise<any> {
+  return (await getJSONWithHeaders(path, jar)).data;
+}
+
+async function getJSONWithHeaders(path: string, jar: Jar): Promise<{ data: any; rateLimitHeaders: Record<string, string> }> {
   const r = await fetch(`${BASE}${path}`, { headers: headers(jar), signal: AbortSignal.timeout(60_000) });
   if (r.status === 401 || r.status === 403) throw new Error("reddit rejected the jar — cookies expired");
   if (!r.ok) throw new Error(`reddit ${path} ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  return r.json();
+  const rateLimitHeaders: Record<string, string> = {};
+  for (const name of ["x-ratelimit-used", "x-ratelimit-remaining", "x-ratelimit-reset"]) {
+    const value = r.headers.get(name);
+    if (value !== null) rateLimitHeaders[name] = value;
+  }
+  return { data: await r.json(), rateLimitHeaders };
+}
+
+function listingItems(j: any): RedditListingItem[] {
+  return (j?.data?.children ?? []).map((c: any) => {
+    const d = c.data ?? {};
+    return {
+      id: String(d.id ?? d.name ?? ""), title: String(d.title ?? ""), score: Number(d.score) || 0,
+      num_comments: Number(d.num_comments) || 0, created: Number(d.created_utc) || 0,
+      permalink: String(d.permalink ?? ""), url: String(d.url ?? ""), author: String(d.author ?? ""),
+      ...(d.subreddit ? { subreddit: String(d.subreddit) } : {}),
+    };
+  });
+}
+
+async function listing(path: string, jar: Jar): Promise<RedditListingResult> {
+  const result = await getJSONWithHeaders(path, jar);
+  return { items: listingItems(result.data), rateLimitHeaders: result.rateLimitHeaders };
 }
 
 // /api/me.json → the logged-in account's data (name + karma). The single call behind
@@ -102,5 +128,22 @@ export const redditPlugin: Plugin = {
         { key: "link_karma", label: "Link karma", value: link },
       ],
     };
+  },
+
+  async subreddit(jar: Jar, name: string, sort: string, limit: number, t?: string): Promise<RedditListingResult> {
+    const qs = new URLSearchParams({ sort, limit: String(limit), raw_json: "1" });
+    if (t) qs.set("t", t);
+    return listing(`/r/${encodeURIComponent(name)}/${encodeURIComponent(sort)}.json?${qs}`, jar);
+  },
+
+  async search(jar: Jar, query: string, subreddit: string | undefined, sort: string, limit: number): Promise<RedditListingResult> {
+    const qs = new URLSearchParams({ q: query, sort, limit: String(limit), raw_json: "1" });
+    // restrict_sr only means anything on /r/<sub>/search — root /search has no subreddit
+    // param, so posting it there would silently return site-wide results.
+    if (subreddit) {
+      qs.set("restrict_sr", "1");
+      return listing(`/r/${encodeURIComponent(subreddit)}/search.json?${qs}`, jar);
+    }
+    return listing(`/search.json?${qs}`, jar);
   },
 };

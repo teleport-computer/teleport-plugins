@@ -21,6 +21,12 @@ export const SCOPE_INGREDIENTS: Record<string, { plugin: string; reads: string[]
       label:
         "read-only · your Reddit account identity (username) and karma (comment + link) · not your saved posts, feed, votes, or messages",
     },
+    "reddit:read": {
+      plugin: "reddit",
+      reads: ["sub", "search"],
+      label:
+        "read-only · subreddit listings and search fetched as your Reddit session · not your account, saved posts, feed, votes, or messages",
+    },
     "codex:usage-read": {
       plugin: "codex",
       reads: ["quota"],
@@ -103,7 +109,7 @@ export const PLUGIN_CAPABILITIES: Record<string, { plugin: string; statement: st
   reddit: {
     plugin: "reddit",
     statement:
-      "CAN read your saved posts and comments (and each item's full body/url), your account identity and karma (comment + link), and a logged-in screenshot of reddit.com. CANNOT save, vote, post, comment, or edit.",
+      "CAN read your saved posts and comments (and each item's full body/url), subreddit listings and search results, your account identity and karma (comment + link), and a logged-in screenshot of reddit.com. CANNOT save, vote, post, comment, or edit.",
   },
   codex: {
     plugin: "codex",

@@ -25,6 +25,8 @@
 //   POST   /api/connect/:requestId/approve|deny  owner_secret — the user's decision
 //   GET    /approve/:requestId                HTML approval screen
 //   GET    /api/:plugin/account              scoped token OR owner — account-level data (identity + karma)
+//   GET    /api/reddit/sub/:name?sort=&limit=&t=  scoped token OR owner — subreddit listing (readKind "sub", reddit:read)
+//   GET    /api/reddit/search?q=&sub=&sort=&limit= scoped token OR owner — reddit search (readKind "search", reddit:read)
 //   GET    /api/:plugin/quota                scoped token OR owner — provider usage/quota numbers (e.g. z.ai Coding Plan, ChatGPT Codex)
 //   GET    /api/:plugin/items[/:id]           scoped token OR owner — read
 //        list (/items)    → {plugin, items:[{id,title,date?,meta?}], data:items}  (prefer `items`; `data` is a back-compat alias)
@@ -135,6 +137,13 @@ function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
     status,
     headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+  });
+}
+
+function jsonWithHeaders(obj: unknown, extra: Record<string, string>, status = 200): Response {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...extra },
   });
 }
 // #131: a scoped token MUST carry a subject. The old `t.subject ?? "owner"` silently read the
@@ -1360,6 +1369,47 @@ export default async function handler(req: Request, ctx: HandlerCtx): Promise<Re
       await auditReadOutcome(t, plugin.id, "quota", "error", (e as Error).message);
       return json({ error: (e as Error).message }, 502);
     }
+  }
+
+  const sub = path.match(/^\/api\/reddit\/sub\/([^/]+)$/);
+  if (req.method === "GET" && sub) {
+    const plugin = getPlugin("reddit");
+    const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
+    const t = verify(bearer, "reddit");
+    if (!isOwner(req) && !t) return json({ error: "unauthorized" }, 401);
+    const denied = await gateRead(t, "reddit", "sub", bearer); if (denied) return denied;
+    const subj = jarSubject(t); if (subj instanceof Response) return subj;
+    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) { await auditReadOutcome(t, "reddit", "sub", "no-jar"); return rj.resp; }
+    if (!plugin?.loggedIn(rj.jar)) { await auditReadOutcome(t, "reddit", "sub", "not-logged-in"); return json({ error: "not logged in to reddit" }, 409); }
+    const sort = url.searchParams.get("sort") || "hot";
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 25) || 25, 1), 100);
+    try {
+      const result = await plugin.subreddit!(rj.jar, decodeURIComponent(sub[1]), sort, limit, url.searchParams.get("t") || undefined);
+      if (t && !isOwner(req)) await recordTokenUse(bearer, "reddit");
+      await audit("read", { plugin: "reddit", item: "sub", by: t ? (t.app || t.subject || "token") : "owner" });
+      return jsonWithHeaders({ plugin: "reddit", items: result.items, data: result.items }, result.rateLimitHeaders);
+    } catch (e) { await auditReadOutcome(t, "reddit", "sub", "error", (e as Error).message); return json({ error: (e as Error).message }, 502); }
+  }
+
+  if (req.method === "GET" && path === "/api/reddit/search") {
+    const plugin = getPlugin("reddit");
+    const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
+    const t = verify(bearer, "reddit");
+    if (!isOwner(req) && !t) return json({ error: "unauthorized" }, 401);
+    const denied = await gateRead(t, "reddit", "search", bearer); if (denied) return denied;
+    const subj = jarSubject(t); if (subj instanceof Response) return subj;
+    const rj = readJar(subj, "reddit", t?.account || url.searchParams.get("account") || undefined); if (!rj.ok) { await auditReadOutcome(t, "reddit", "search", "no-jar"); return rj.resp; }
+    if (!plugin?.loggedIn(rj.jar)) { await auditReadOutcome(t, "reddit", "search", "not-logged-in"); return json({ error: "not logged in to reddit" }, 409); }
+    const query = url.searchParams.get("q") || "";
+    if (!query) return json({ error: "q is required" }, 400);
+    const sort = url.searchParams.get("sort") || "relevance";
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 10) || 10, 1), 100);
+    try {
+      const result = await plugin.search!(rj.jar, query, url.searchParams.get("sub") || undefined, sort, limit);
+      if (t && !isOwner(req)) await recordTokenUse(bearer, "reddit");
+      await audit("read", { plugin: "reddit", item: "search", by: t ? (t.app || t.subject || "token") : "owner" });
+      return jsonWithHeaders({ plugin: "reddit", items: result.items, data: result.items }, result.rateLimitHeaders);
+    } catch (e) { await auditReadOutcome(t, "reddit", "search", "error", (e as Error).message); return json({ error: (e as Error).message }, 502); }
   }
 
   // --- google-calendar event-scoped WRITE (RFC: edit-on-behalf, attenuated to one event).

@@ -9,6 +9,7 @@
 //     silently fall back to the API.
 // Owner-only for now (server/handler.ts) — this is OAuth3's first WRITE surface.
 
+import { requireNetworkLog } from "./browser.ts";
 import { Jar } from "./plugins/types.ts";
 
 // ---- API path (rettiwt-api) -----------------------------------------------
@@ -123,7 +124,7 @@ export async function browserTrace(
   await bridge(spiUrl, "/navigate", { url: targetUrl }, secret);
   await new Promise((r) => setTimeout(r, 5000));
   const t = await bridge(spiUrl, "/capture-trace", {}, secret);
-  const log: any[] = t.network_log || [];
+  const log: any[] = requireNetworkLog(t) as any[];
   return {
     url: t.url || targetUrl,
     reified: reifyTrace(log, action),

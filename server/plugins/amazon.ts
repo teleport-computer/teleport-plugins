@@ -23,6 +23,7 @@
 // amazon.com jar, which only the owner can sync via the extension. The code + parser
 // test + honest error paths are delivered here; the owner does the live-jar proof.
 
+import { requireNetworkLog } from "../browser.ts";
 import { cookieHeader, Jar, Plugin, PluginItem, SubstituteOp, SubstituteResult } from "./types.ts";
 
 // Live Amazon base. Override via AMAZON_BASE (e2e/mock) through configureAmazon();
@@ -531,7 +532,7 @@ async function browserNavigate(
   await browserSpi(spiUrl, "/navigate", { url: targetUrl }, secret);
   if (NAV_DELAY_MS > 0) await new Promise((res) => setTimeout(res, NAV_DELAY_MS)); // let logged-in XHR settle
   const t = await browserSpi(spiUrl, "/capture-trace", {}, secret);
-  return { dom_html: t.dom_html || "", network_log: t.network_log || [], url: t.url || targetUrl };
+  return { dom_html: t.dom_html || "", network_log: requireNetworkLog(t), url: t.url || targetUrl };
 }
 
 // Re-capture after an actuation (jar already injected) — navigate + /capture-trace.
@@ -541,7 +542,7 @@ async function browserCapture(
   await browserSpi(spiUrl, "/navigate", { url: targetUrl }, secret);
   if (NAV_DELAY_MS > 0) await new Promise((res) => setTimeout(res, NAV_DELAY_MS));
   const t = await browserSpi(spiUrl, "/capture-trace", {}, secret);
-  return { dom_html: t.dom_html || "", network_log: t.network_log || [], url: t.url || targetUrl };
+  return { dom_html: t.dom_html || "", network_log: requireNetworkLog(t), url: t.url || targetUrl };
 }
 
 // Run a script in the browser. The in-TEE browser runs its OWN page JS (proven in #98: it

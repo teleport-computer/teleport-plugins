@@ -92,18 +92,38 @@ export async function browserScreenshot(spiUrl: string, plugin: Plugin, jar: Jar
   return { screenshot: `data:image/png;base64,${b64}`, title: cap.certificate?.title };
 }
 
+// A 200 /capture-trace without a network_log is a broken capture, not an empty one — the
+// response bodies ARE the payload (RFC 0001 M0), and an empty log reads downstream as "the
+// site made no calls". Every consumer fails loud on it instead of laundering it into [].
+export function requireNetworkLog(t: { network_log?: unknown }): unknown[] {
+  if (!Array.isArray(t.network_log)) {
+    throw new Error(
+      `browser SPI /capture-trace returned no network_log: ${JSON.stringify(t).slice(0, 200)}`,
+    );
+  }
+  return t.network_log;
+}
+
 // RFC 0001 M0: browser ground-truth capture with network_log for reification.
 // Returns the full trace including network_log (XHR/Fetch requests with response bodies).
-export async function browserCaptureTrace(spiUrl: string, plugin: Plugin, jar: Jar, targetUrl: string) {
+// The deployed bridge is auth-gated (BRIDGE_SECRET), so every control call carries the
+// bearer — without it the SPI answers 401 before /capture-trace is even reached.
+export async function browserCaptureTrace(
+  spiUrl: string,
+  plugin: Plugin,
+  jar: Jar,
+  targetUrl: string,
+  secret = "",
+) {
   if (!spiUrl) throw new Error("BROWSER_SPI_URL not configured — no browser SPI to drive");
-  await spi(spiUrl, "/session", { cookies: jarToCookies(plugin, jar), userAgent: UA });
-  await spi(spiUrl, "/navigate", { url: targetUrl });
+  await spi(spiUrl, "/session", { cookies: jarToCookies(plugin, jar), userAgent: UA }, secret);
+  await spi(spiUrl, "/navigate", { url: targetUrl }, secret);
   await new Promise((res) => setTimeout(res, 5000)); // let logged-in XHR settle
-  const t = await spi(spiUrl, "/capture-trace", {});
+  const t = await spi(spiUrl, "/capture-trace", {}, secret);
   return {
     screenshot: t.screenshot,
     title: t.title,
     dom_html: t.dom_html,
-    network_log: t.network_log ?? [], // { requestId, method, url, requestHeaders, requestBody, status, responseHeaders, responseBody }
+    network_log: requireNetworkLog(t), // { requestId, method, url, request_headers, post_data, status, response_headers, response_body }
   };
 }

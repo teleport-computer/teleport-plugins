@@ -1,21 +1,27 @@
-# PLAN — issue #67: signed-in users reach the dashboard in one click
+# PLAN — issue #54: youtube parseHistory extracts per-day section headers so items carry a watch-date
 
-From the issue `## Acceptance`:
+Acceptance checkboxes (from the issue):
 
-- [ ] AC1: Signed in (valid `oauth3_session`), `/oauth3/` primary CTA reads "Go to your
-      dashboard"; one click lands on `/oauth3/dashboard`.
-- [ ] AC2: Signed out, `/oauth3/` unchanged — "Sign in to this pod" → `/oauth3/login`.
-- [ ] AC3: Footer "Sign in" link consistent with rendered state — no page shows both a
-      sign-in CTA and a signed-in CTA.
+- [ ] `GET /oauth3/api/youtube/items` on staging returns items carrying `date` as an ISO string,
+      with at least two distinct dates from two different day sections — **not met: live
+      transcript blocked on staging egress (see the step below); parser verified offline only.**
+- [x] Items under a relative header resolve to a real date ("Today" → today's ISO date).
+- [x] A section whose header cannot be parsed leaves `date` unset and its items are still
+      returned (no drop).
 
 ## Steps
-- [ ] home-page.ts: `id=cta` on the primary CTA; inline script validates the localStorage
-      session via `api/me` (the dashboard's own idiom) and swaps CTA + footer link to
-      `dashboard` when signed in. Errors surface (no fallback).
-- [ ] handler_test.ts: GET / keeps the signed-out CTA and ships the swap script (AC2 + the
-      AC1/AC3 mechanism server-side; the rendered states are Tier 2 browser evidence).
-- [ ] `deno check server/main.ts` clean; `deno test` green → out/oa-67/test.log.
-- [ ] Deploy branch via `bash ~/paseo-batch/deploy-staging-oauth3.sh staging-oa-67`.
-- [ ] Tier 2 walk via envoy bridge (flock'd): signed-out shot → login as u-swarm → signed-in
-      `/` shot ("Go to your dashboard") → click → dashboard shot. → `.evidence/issue-67/`.
-- [ ] PR → staging, embed evidence, label `ready-to-merge` (gh api), issue `ready`→`in-review`.
+
+- [x] Read the day label off each `itemSectionRenderer` header
+      (`header.itemSectionHeaderRenderer.title.runs[0].text`, `simpleText` fallback) in
+      `parseHistory`; stamp every item in the section (videos, lockups, shorts) with it.
+- [x] `dayDate()`: "Today"/"Yesterday" resolve against now; "Aug 25" is current year unless
+      that lands in the future (year-wrap → last year); "July 12, 2025" keeps its year;
+      anything else → `undefined` (undated, never dropped).
+- [x] `server/plugins/youtube_test.ts`: fixture-based tests for all header kinds, appended
+      beside the #144 liked-videos tests (no network).
+- [x] `deno check server/main.ts` + `deno test --allow-net --allow-read --allow-write --allow-env`
+      green (205 passed).
+- [ ] Live Tier-1 transcript on staging — blocked: staging's oauth3 env has no
+      `EGRESS_PROXY_URL`, so the history fetch exits the Phala datacenter IP and Google
+      serves `logged_in=0` against a jar synced fresh the same day (the IP-replay de-auth
+      signature from worker-corpus 2026-07-03). Operator step filed on the issue.

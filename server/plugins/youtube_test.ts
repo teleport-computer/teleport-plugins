@@ -2,9 +2,10 @@
 // builds, so these pin the field paths we rely on (videoId, title.runs[0].text,
 // shortBylineText, lengthText.simpleText) + the continuation-token location for both the
 // first page (ytInitialData) and a browse continuation response. Fixture-based — no network.
+// #54 adds parseHistory date-stamping tests below, same fixture discipline.
 
 import { assert, assertEquals } from "jsr:@std/assert";
-import { parseLikedContinuation, parseLikedItem, parseLikedPage } from "./youtube.ts";
+import { parseHistory, parseLikedContinuation, parseLikedItem, parseLikedPage } from "./youtube.ts";
 
 Deno.test("parseLikedItem: id + title + channel + length from a playlistVideoRenderer", () => {
   const pvr = {
@@ -93,4 +94,82 @@ Deno.test("parseLikedContinuation: no actions -> empty, no token", () => {
 Deno.test("parseLikedPage: empty/missing contents -> empty, no token (never throws)", () => {
   assertEquals(parseLikedPage({}), { items: [], cont: undefined });
   assertEquals(parseLikedPage({ contents: { twoColumnBrowseResultsRenderer: { tabs: [] } } }), { items: [], cont: undefined });
+});
+
+// --- #54: parseHistory stamps each item with its day-section header as `date` (ISO) ---
+
+const section = (label: string, ...contents: unknown[]) => {
+  const runs = label ? [{ text: label }] : [];
+  return {
+    itemSectionRenderer: {
+      header: { itemSectionHeaderRenderer: { title: { runs } } },
+      contents,
+    },
+  };
+};
+const video = (id: string) => ({ videoRenderer: { videoId: id, title: { runs: [{ text: `video ${id}` }] } } });
+const lockup = (id: string) => ({
+  lockupViewModel: {
+    contentId: id,
+    metadata: { lockupMetadataViewModel: { title: { content: `video ${id}` } } },
+  },
+});
+const reel = (id: string, title: string) => ({
+  shortsLockupViewModel: {
+    entityId: `history-shorts-shelf-item-${id}`,
+    overlayMetadata: { primaryText: { content: title } },
+  },
+});
+const page = (...sections: unknown[]) => ({
+  contents: {
+    twoColumnBrowseResultsRenderer: {
+      tabs: [{ tabRenderer: { content: { sectionListRenderer: { contents: sections } } } }],
+    },
+  },
+});
+
+Deno.test("parseHistory: day-section header stamps every item's date", () => {
+  // Fixed "now" (2026-08-27 14:03) so the relative-label assertions are deterministic.
+  const now = new Date(2026, 7, 27, 14, 3);
+  const items = parseHistory(
+    page(
+      section("Today", video("a1"), { reelShelfRenderer: { items: [reel("s1", "short one")] } }),
+      section("Yesterday", lockup("b1")),
+      section("Aug 25", video("c1"), lockup("c2")),
+      section("July 12, 2025", video("d1")),
+      section("", video("e1")), // continuation-style section: empty header, items undated
+    ),
+    now,
+  );
+  assertEquals(items.length, 7);
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  assertEquals(byId["a1"].date, "2026-08-27", "Today resolves to now's ISO date");
+  assertEquals(byId["s1"].date, "2026-08-27", "shorts inherit their day section's date");
+  assertEquals(byId["b1"].date, "2026-08-26", "Yesterday resolves to now minus one day");
+  assertEquals(byId["c1"].date, "2026-08-25");
+  assertEquals(byId["c2"].date, "2026-08-25");
+  assertEquals(byId["d1"].date, "2025-07-12", "explicit year is kept verbatim");
+  assert(byId["e1"].date === undefined, "empty header leaves date unset");
+  assertEquals(byId["e1"].id, "e1", "undated items are still returned, never dropped");
+});
+
+Deno.test("parseHistory: year-less month/day wraps to last year when in the future", () => {
+  // YouTube omits the year only for the current year: a "Dec 30" header seen on 2026-08-27
+  // must be 2025-12-30, not a future date.
+  const items = parseHistory(page(section("Dec 30", video("w1"))), new Date(2026, 7, 27));
+  assertEquals(items[0].date, "2025-12-30");
+});
+
+Deno.test("parseHistory: unparseable header leaves items undated, not dropped", () => {
+  const items = parseHistory(
+    page(
+      section("Watched earlier this week", video("u1")), // not a date format we recognize
+      section("Today", video("u2")),
+    ),
+    new Date(2026, 7, 27),
+  );
+  assertEquals(items.length, 2);
+  assert(items[0].date === undefined, "unparseable header must not guess a date");
+  assertEquals(items[0].id, "u1", "item under an unparseable header is still returned");
+  assertEquals(items[1].date, "2026-08-27");
 });

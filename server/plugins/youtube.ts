@@ -8,6 +8,8 @@
 //   - reelShelfRenderer    — a per-day shelf of shortsLockupViewModel items (this is where
 //                            Shorts live now; missing it = no Shorts at all)
 // Field paths shift between YouTube builds, so each extractor tries a couple of fallbacks.
+// Each day-section's header ("Today", "Yesterday", "Aug 25", …) carries the watch day;
+// parseHistory stamps every item in the section with it as `date` (ISO).
 
 import { cookieHeader, Jar, Plugin, PluginItem, PluginListOptions } from "./types.ts";
 import { egressFetch } from "../egress.ts";
@@ -16,20 +18,21 @@ import { registerRead } from "../reads.ts";
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 const ORIGIN = "https://www.youtube.com";
 
-const item = (id: string, title: string, isShort: boolean): PluginItem => ({ id, title, meta: { isShort } });
+const item = (id: string, title: string, isShort: boolean, date?: string): PluginItem =>
+  date === undefined ? { id, title, meta: { isShort } } : { id, title, date, meta: { isShort } };
 
 // A shorts-shelf entry. Newer builds use shortsLockupViewModel; older use reelItemRenderer.
-function parseShort(reel: any): PluginItem | null {
+function parseShort(reel: any, date?: string): PluginItem | null {
   const slv = reel?.shortsLockupViewModel;
   if (slv) {
     const id = slv.onTap?.innertubeCommand?.reelWatchEndpoint?.videoId ||
       String(slv.entityId ?? "").replace(/^history-shorts-shelf-item-/, "");
     const title = slv.overlayMetadata?.primaryText?.content ||
       String(slv.accessibilityText ?? "").replace(/,\s*[\d.,]+[KMB]?\s*views?\b.*$/i, "").trim();
-    return id ? item(String(id), title, true) : null;
+    return id ? item(String(id), title, true, date) : null;
   }
   const r = reel?.reelItemRenderer;
-  if (r?.videoId) return item(String(r.videoId), r.headline?.simpleText ?? "", true);
+  if (r?.videoId) return item(String(r.videoId), r.headline?.simpleText ?? "", true, date);
   return null;
 }
 
@@ -88,15 +91,47 @@ async function sha1hex(s: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function parseHistory(data: any): PluginItem[] {
+// Resolve a day-section header ("Today", "Yesterday", "Aug 25", "August 25, 2025") to an
+// ISO YYYY-MM-DD. A year-less month/day is the CURRENT year unless that lands in the
+// future — YouTube only omits the year for the current year, so "Dec 30" seen on Jan 2
+// means last year. Unrecognized labels resolve to undefined: the item ships undated,
+// never dropped (same discipline as the renderer fallbacks below).
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+function dayDate(label: string, now = new Date()): string | undefined {
+  const t = label.trim();
+  const local = (y: number, mo: number, d: number) =>
+    `${y}-${String(mo + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (/^today$/i.test(t)) return local(now.getFullYear(), now.getMonth(), now.getDate());
+  if (/^yesterday$/i.test(t)) {
+    const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    return local(y.getFullYear(), y.getMonth(), y.getDate());
+  }
+  const m = t.match(/^(?:[A-Za-z]+,\s*)?([A-Za-z]+)\s+(\d{1,2})(?:,?\s+(\d{4}))?$/);
+  if (!m) return undefined;
+  const mo = MONTHS.indexOf(m[1].toLowerCase().slice(0, 3));
+  if (mo < 0) return undefined;
+  const day = Number(m[2]);
+  if (m[3]) return local(Number(m[3]), mo, day);
+  let year = now.getFullYear();
+  if (new Date(year, mo, day) > now) year--; // year-wrap: a future date-less label is last year
+  return local(year, mo, day);
+}
+
+export function parseHistory(data: any, now = new Date()): PluginItem[] {
   const tabs = data?.contents?.twoColumnBrowseResultsRenderer?.tabs ?? [];
   const sections = tabs[0]?.tabRenderer?.content?.sectionListRenderer?.contents ?? [];
   const out: PluginItem[] = [];
   for (const section of sections) {
+    // The day label lives on the section header, not on each item — every item in the
+    // section shares it. Continuation sections (page 2+) carry an empty header: those
+    // items stay undated rather than inheriting a wrong day.
+    const title = section?.itemSectionRenderer?.header?.itemSectionHeaderRenderer?.title;
+    const date = dayDate(title?.runs?.[0]?.text ?? title?.simpleText ?? "", now);
     for (const it of section?.itemSectionRenderer?.contents ?? []) {
       if (it.reelShelfRenderer) {
         for (const reel of it.reelShelfRenderer.items ?? []) {
-          const s = parseShort(reel);
+          const s = parseShort(reel, date);
           if (s) out.push(s);
         }
         continue;
@@ -105,13 +140,13 @@ function parseHistory(data: any): PluginItem[] {
       if (v?.videoId) {
         const isShort = (v.thumbnailOverlays ?? []).some((o: any) =>
           o.thumbnailOverlayTimeStatusRenderer?.style === "SHORTS");
-        out.push(item(String(v.videoId), v.title?.runs?.[0]?.text ?? "", isShort));
+        out.push(item(String(v.videoId), v.title?.runs?.[0]?.text ?? "", isShort, date));
         continue;
       }
       const lvm = it.lockupViewModel;
       if (lvm?.contentId) {
         const title = lvm.metadata?.lockupMetadataViewModel?.title?.content ?? "";
-        out.push(item(String(lvm.contentId), title, false));
+        out.push(item(String(lvm.contentId), title, false, date));
       }
     }
   }
